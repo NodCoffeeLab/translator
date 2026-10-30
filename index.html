@@ -46,7 +46,7 @@
     <!-- Toggle Settings Button -->
     <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ Settings</button>
 
-    <!-- Subtitle History Stack Container (10 sentences, auto-scroll, full-text wrap) -->
+    <!-- Subtitle History Stack Container -->
     <div id="subtitlesContainer" class="flex-grow overflow-y-auto no-scrollbar px-6 md:px-16 pt-16 pb-6 w-full max-w-6xl mx-auto z-10 flex flex-col justify-end">
         <div id="subtitlesList" class="flex flex-col gap-4 w-full">
             <div class="text-gray-600 text-lg md:text-2xl text-center py-10">
@@ -100,7 +100,7 @@
         let recognition = null;
         let isRunning = false;
         
-        let savedText = ""; // 모바일에서 숨을 고를 때 이전 발화를 보존하는 변수
+        let savedText = "";
         let currentSessionText = "";
         let silenceTimer = null;
 
@@ -190,8 +190,7 @@ Translate speech into natural, professional Korean using standard coffee industr
             'gemini-2.5-flash',
             'gemini-3.5-flash',
             'gemini-3.1-flash-lite',
-            'gemini-2.5-flash-lite',
-            'gemini-1.5-flash'
+            'gemini-2.5-flash-lite'
         ];
         let activeModel = null;
 
@@ -259,9 +258,18 @@ Translate speech into natural, professional Korean using standard coffee industr
             throw new Error(lastErrorMsg || "Translation request failed");
         }
 
-        // 전체 발화 문장 조합 (이전 보존분 + 현재 세션 수음분)
+        // 모바일 중복 결합 방지 알고리즘 (에코 완벽 제거)
         function getFullSpeech() {
-            return [savedText, currentSessionText].filter(Boolean).join(" ").trim();
+            const prev = savedText.trim();
+            const curr = currentSessionText.trim();
+            if (!prev) return curr;
+            if (!curr) return prev;
+
+            // 새로 들어온 문장이 이전 문장과 같거나 이전 문장으로 시작하면 중복 제거
+            if (curr.startsWith(prev)) return curr;
+            if (prev.endsWith(curr)) return prev;
+
+            return `${prev} ${curr}`.trim();
         }
 
         if (recognition) {
@@ -273,7 +281,6 @@ Translate speech into natural, professional Korean using standard coffee industr
                 let finalPart = "";
                 let interimPart = "";
 
-                // ★ 핵심: event.results 전체를 깨끗하게 순회 (+= 누적 버그 원천 차단)
                 for (let i = 0; i < event.results.length; ++i) {
                     const item = event.results[i];
                     if (item.isFinal) {
@@ -290,14 +297,12 @@ Translate speech into natural, professional Korean using standard coffee industr
                     liveOriginalText.textContent = `🎙️ ${fullSpeech}`;
 
                     clearTimeout(silenceTimer);
-                    // 3초간 말이 완전히 멈추면 한 번에 번역기로 전송
                     silenceTimer = setTimeout(async () => {
                         const textToTranslate = getFullSpeech();
                         savedText = "";
                         currentSessionText = "";
                         liveOriginalText.textContent = "";
 
-                        // 세션을 깔끔하게 리셋하여 다음 발화를 새롭게 준비
                         try { recognition.abort(); } catch(e) {}
 
                         if (textToTranslate) {
@@ -317,7 +322,7 @@ Translate speech into natural, professional Korean using standard coffee industr
                                 renderSubtitles();
                                 updateStatus("Mic Active: Listening...", "text-green-400", "bg-gray-900");
                             } catch (error) {
-                                currentItem.translated = `<span class="text-red-500">Translation Failed: ${error.message}</span>`;
+                                currentItem.translated = `<span class="text-red-500 font-semibold">${error.message}</span>`;
                                 renderSubtitles();
                                 updateStatus("Translation Error", "text-red-400", "bg-gray-900");
                             }
@@ -335,7 +340,6 @@ Translate speech into natural, professional Korean using standard coffee industr
             };
 
             recognition.onend = () => {
-                // 모바일에서 문장 도중 마이크가 끊겨도 방금 말한 내용을 안전하게 보존
                 if (currentSessionText) {
                     savedText = getFullSpeech();
                     currentSessionText = "";
