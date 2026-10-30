@@ -91,7 +91,7 @@
         } else {
             recognition = new SpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = false;
+            recognition.interimResults = true;
         }
 
         function updateStatus(message, textColor = "text-gray-400", bgColor = "bg-gray-900") {
@@ -164,24 +164,46 @@ Translate the input speech into natural, professional Korean using industry-stan
                 updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
             };
 
-            recognition.onresult = async (event) => {
-                const current = event.resultIndex;
-                const transcript = event.results[current][0].transcript.trim();
+            let silenceTimer = null;
+        let lastTranscribedText = "";
 
-                if (transcript) {
-                    animateTextChange(originalTextEl, transcript);
-                    updateStatus("AI 번역 중... (Translating)", "text-yellow-400", "bg-gray-900");
+        recognition.onresult = (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
 
-                    try {
-                        const translated = await translateTextWithGemini(transcript);
-                        animateTextChange(translatedTextEl, translated);
-                        updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
-                    } catch (error) {
-                        animateTextChange(translatedTextEl, `<span class="text-red-500 text-2xl md:text-2xl">번역 실패: ${error.message}</span>`);
-                        updateStatus("번역 오류 발생", "text-red-400", "bg-gray-900");
-                    }
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
                 }
-            };
+            }
+
+            const currentSpeech = (finalTranscript || interimTranscript).trim();
+
+            if (currentSpeech) {
+                // 1. 말하는 즉시 원문을 화면에 실시간 표시 (체감 딜레이 제거)
+                originalTextEl.innerHTML = currentSpeech;
+                lastTranscribedText = currentSpeech;
+
+                // 2. 기존 타이머를 취소하고 1.2초 카운트다운 시작
+                clearTimeout(silenceTimer);
+                silenceTimer = setTimeout(async () => {
+                    // 말을 멈춘 지 1.2초가 지나면 즉시 Gemini 번역 호출
+                    if (lastTranscribedText) {
+                        updateStatus("AI 번역 중... (Translating)", "text-yellow-400", "bg-gray-900");
+                        try {
+                            const translated = await translateTextWithGemini(lastTranscribedText);
+                            animateTextChange(translatedTextEl, translated);
+                            updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
+                        } catch (error) {
+                            animateTextChange(translatedTextEl, `<span class="text-red-500 text-3xl">번역 실패: ${error.message}</span>`);
+                            updateStatus("번역 오류 발생", "text-red-400", "bg-gray-900");
+                        }
+                    }
+                }, 2000); // 1.2초 침묵 감지 (취향에 따라 1000~1500 조절 가능)
+            }
+        };
 
             recognition.onerror = (event) => {
                 if (event.error !== 'no-speech') {
