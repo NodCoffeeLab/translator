@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>비즈니스 커핑 실시간 통역기</title>
+    <title>Specialty Coffee Live Subtitles</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
@@ -20,7 +20,7 @@
 </head>
 <body class="bg-black text-white h-screen w-screen overflow-hidden flex flex-col justify-between">
 
-    <!-- 상단 설정 패널 -->
+    <!-- Top Settings Panel -->
     <div id="settingsPanel" class="absolute top-0 w-full bg-gray-900 border-b border-gray-700 p-4 z-50 flex flex-wrap gap-4 items-center justify-center transition-transform duration-300 shadow-2xl">
         <div class="flex items-center gap-2">
             <label for="apiKey" class="text-gray-400 text-sm font-semibold">Gemini API Key</label>
@@ -28,40 +28,40 @@
         </div>
         
         <div class="flex items-center gap-2">
-            <label for="directionSelect" class="text-gray-400 text-sm font-semibold">통역 방향</label>
+            <label for="directionSelect" class="text-gray-400 text-sm font-semibold">Direction</label>
             <select id="directionSelect" class="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-sm">
-                <option value="es-to-ko">Español ➔ Korean</option>
-                <option value="en-to-ko">English ➔ Korean</option>
-                <option value="ko-to-es">Korean ➔ Español</option>
-                <option value="ko-to-en">Korean ➔ English</option>
+                <option value="es-to-ko">Spanish → Korean (Producer Session)</option>
+                <option value="en-to-ko">English → Korean (Presenter Session)</option>
+                <option value="ko-to-es">Korean → Spanish (Q&A Session)</option>
+                <option value="ko-to-en">Korean → English (Q&A Session)</option>
             </select>
         </div>
 
-        <button id="startBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded transition shadow-lg">마이크 켜기 (Start)</button>
-        <button id="stopBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition shadow-lg hidden">마이크 끄기 (Stop)</button>
+        <button id="startBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded transition shadow-lg">Start Microphone</button>
+        <button id="stopBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition shadow-lg hidden">Stop Microphone</button>
         
-        <button id="hideSettingsBtn" class="absolute right-4 top-4 text-gray-400 hover:text-white text-sm bg-gray-800 px-3 py-1 rounded">▲ 패널 숨기기</button>
+        <button id="hideSettingsBtn" class="absolute right-4 top-4 text-gray-400 hover:text-white text-sm bg-gray-800 px-3 py-1 rounded">▲ Hide Settings</button>
     </div>
 
-    <!-- 설정 패널 토글 버튼 -->
-    <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ 설정 열기</button>
+    <!-- Toggle Settings Button -->
+    <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ Settings</button>
 
-    <!-- 자막 히스토리 스택 영역 -->
+    <!-- Subtitle History Stack Container (Full text wrap, no ellipsis) -->
     <div id="subtitlesContainer" class="flex-grow overflow-y-auto no-scrollbar px-6 md:px-16 pt-16 pb-6 w-full max-w-6xl mx-auto z-10 flex flex-col justify-end">
-        <div id="subtitlesList" class="flex flex-col gap-3 w-full">
+        <div id="subtitlesList" class="flex flex-col gap-4 w-full">
             <div class="text-gray-600 text-lg md:text-2xl text-center py-10">
-                대기 중입니다. 상단 설정에서 통역 방향과 API Key 확인 후 마이크를 켜주세요.
+                Waiting for speech... Please configure API Key and start the microphone in settings.
             </div>
         </div>
 
-        <!-- 실시간 마이크 수음 표시줄 -->
-        <div id="liveOriginalText" class="text-cyan-400 text-sm md:text-base italic mt-3 min-h-[1.5rem] tracking-wide font-light truncate"></div>
+        <!-- Real-time Spoken Text Preview -->
+        <div id="liveOriginalText" class="text-cyan-400 text-sm md:text-base italic mt-3 min-h-[1.5rem] tracking-wide font-light break-words whitespace-pre-wrap"></div>
     </div>
 
-    <!-- 하단 상태 표시줄 -->
+    <!-- Bottom Status Bar -->
     <div class="w-full text-center pb-3 z-10">
         <span id="statusIndicator" class="inline-block px-4 py-1 rounded-full bg-gray-900 text-gray-400 text-xs md:text-sm font-semibold border border-gray-800 shadow">
-            상태: 준비됨 (Ready)
+            Status: Ready
         </span>
     </div>
 
@@ -88,7 +88,7 @@
                 try { localStorage.setItem('GEMINI_API_KEY', apiKeyInput.value.trim()); } catch(e) {}
             });
         } catch (e) {
-            console.warn("localStorage 접근 불가");
+            console.warn("localStorage restricted");
         }
 
         const STT_LANG_MAP = {
@@ -101,6 +101,8 @@
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
         let isRunning = false;
+        let recognitionSessionId = 0;
+        let startIndex = 0;
 
         if (SpeechRecognition) {
             try {
@@ -108,7 +110,7 @@
                 recognition.continuous = true;
                 recognition.interimResults = true;
             } catch (e) {
-                console.error("음성 인식 객체 초기화 실패:", e);
+                console.error("SpeechRecognition initialization failed:", e);
             }
         }
 
@@ -143,9 +145,9 @@
                 }
 
                 return `
-                    <div class="fade-in transition-all duration-200 ${opacityClass} border-b border-gray-900 pb-2">
-                        <div class="${originalSize} italic mb-0.5 truncate">${item.original}</div>
-                        <div class="${translatedSize} leading-snug break-keep">${item.translated}</div>
+                    <div class="fade-in transition-all duration-200 ${opacityClass} border-b border-gray-900 pb-3">
+                        <div class="${originalSize} italic mb-1 break-words whitespace-pre-wrap">${item.original}</div>
+                        <div class="${translatedSize} leading-relaxed break-words whitespace-pre-wrap">${item.translated}</div>
                     </div>
                 `;
             }).join('');
@@ -189,7 +191,7 @@ Translate speech into natural, professional Korean using standard coffee industr
 
         async function translateTextWithGemini(text) {
             const apiKey = apiKeyInput.value.trim();
-            if (!apiKey) throw new Error("API Key 없음");
+            if (!apiKey) throw new Error("Missing API Key");
 
             const direction = directionSelect.value;
             const systemPrompt = getSystemPrompt(direction);
@@ -248,77 +250,84 @@ Translate speech into natural, professional Korean using standard coffee industr
                     lastErrorMsg = e.message;
                 }
             }
-            throw new Error(lastErrorMsg || "번역 호출 실패");
+            throw new Error(lastErrorMsg || "Translation request failed");
         }
 
         let silenceTimer = null;
-        let speechBuffer = ""; // ★ 여러 문장을 누적해서 담을 버퍼 변수
+        let pendingTranscript = "";
 
         if (recognition) {
             recognition.onstart = () => {
-                updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
+                recognitionSessionId++;
+                startIndex = 0;
+                updateStatus("Mic Active: Listening...", "text-green-400", "bg-gray-900");
             };
 
             recognition.onresult = (event) => {
-                let interimTranscript = '';
-                let finalTranscript = '';
+                let finalPart = '';
+                let interimPart = '';
 
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                // startIndex부터 현재 결과까지만 정확하게 순회 (반복 에코 버그 원천 제거)
+                for (let i = startIndex; i < event.results.length; ++i) {
+                    const text = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
-                        // 확정된 문장 뒤에 공백을 주어 띄어쓰기 유지
-                        finalTranscript += event.results[i][0].transcript + ' ';
+                        finalPart += text + ' ';
                     } else {
-                        interimTranscript += event.results[i][0].transcript;
+                        interimPart += text;
                     }
                 }
 
-                // ★ 핵심: 확정된 문장이 생기면 버퍼에 영구 누적함 (3초 타이머가 초기화되지 않는 한 보존됨)
-                if (finalTranscript) {
-                    speechBuffer += finalTranscript;
-                }
-
-                // 화면에 실시간으로 띄워줄 전체 문장 = (지금까지 확정된 누적 문장) + (현재 말하고 있는 미확정 문장)
-                const currentSpeech = (speechBuffer + interimTranscript).trim();
+                const currentSpeech = (finalPart + interimPart).trim();
 
                 if (currentSpeech) {
+                    pendingTranscript = currentSpeech;
                     liveOriginalText.textContent = `🎙️ ${currentSpeech}`;
 
                     clearTimeout(silenceTimer);
-                    // 3초 침묵 감지 후 한꺼번에 번역
+                    const currentSession = recognitionSessionId;
+
+                    // 3초 침묵 감지
                     silenceTimer = setTimeout(async () => {
-                        const textToTranslate = currentSpeech;
-                        speechBuffer = ""; // ★ 번역에 들어가면 다음 덩어리를 위해 누적 버퍼를 비워줌
+                        const textToTranslate = pendingTranscript;
+                        pendingTranscript = "";
+                        
+                        // 현재까지 인식된 모든 결과 인덱스를 건너뜀
+                        if (recognitionSessionId === currentSession) {
+                            startIndex = event.results.length;
+                        } else {
+                            startIndex = 0;
+                        }
                         liveOriginalText.textContent = "";
 
                         if (textToTranslate) {
                             const currentItem = {
                                 original: textToTranslate,
-                                translated: '<span class="text-yellow-400 animate-pulse text-base md:text-xl">⏳ 번역 중...</span>'
+                                translated: '<span class="text-yellow-400 animate-pulse text-base md:text-xl">⏳ Translating...</span>'
                             };
                             subtitleHistory.push(currentItem);
                             if (subtitleHistory.length > MAX_HISTORY) subtitleHistory.shift();
                             renderSubtitles();
 
-                            updateStatus("AI 번역 중... (Translating)", "text-yellow-400", "bg-gray-900");
+                            updateStatus("AI Translating...", "text-yellow-400", "bg-gray-900");
 
                             try {
                                 const translated = await translateTextWithGemini(textToTranslate);
                                 currentItem.translated = translated;
                                 renderSubtitles();
-                                updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
+                                updateStatus("Mic Active: Listening...", "text-green-400", "bg-gray-900");
                             } catch (error) {
-                                currentItem.translated = `<span class="text-red-500">번역 실패: ${error.message}</span>`;
+                                currentItem.translated = `<span class="text-red-500">Translation Failed: ${error.message}</span>`;
                                 renderSubtitles();
-                                updateStatus(`번역 오류`, "text-red-400", "bg-gray-900");
+                                updateStatus("Translation Error", "text-red-400", "bg-gray-900");
                             }
                         }
-                    }, 2000); // 2초 대기
+                    }, 3000);
                 }
             };
 
             recognition.onerror = (event) => {
                 if (event.error !== 'no-speech') {
-                    updateStatus(`인식 오류: ${event.error}`, "text-red-400", "bg-gray-900");
+                    updateStatus(`Recognition Error: ${event.error}`, "text-red-400", "bg-gray-900");
                 }
             };
 
@@ -326,7 +335,7 @@ Translate speech into natural, professional Korean using standard coffee industr
                 if (isRunning) {
                     try { recognition.start(); } catch (e) {}
                 } else {
-                    updateStatus("마이크 중지됨 (Stopped)", "text-gray-400", "bg-gray-900");
+                    updateStatus("Status: Stopped", "text-gray-400", "bg-gray-900");
                 }
             };
         }
@@ -334,15 +343,15 @@ Translate speech into natural, professional Korean using standard coffee industr
         startBtn.addEventListener('click', () => {
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
-                alert("Gemini API Key를 먼저 입력해주세요.");
-                updateStatus("API Key를 먼저 입력해주세요.", "text-red-400", "bg-gray-900");
+                alert("Please enter your Gemini API Key first.");
+                updateStatus("Please enter API Key first", "text-red-400", "bg-gray-900");
                 apiKeyInput.focus();
                 return;
             }
 
             if (!recognition) {
-                alert("현재 브라우저는 음성 인식을 지원하지 않습니다.\nChrome 브라우저에서 열어주세요.");
-                updateStatus("오류: 음성 인식 미지원 브라우저", "text-red-400", "bg-gray-900");
+                alert("Speech recognition is not supported in this browser.\nPlease open this tool in Google Chrome.");
+                updateStatus("Error: Browser not supported", "text-red-400", "bg-gray-900");
                 return;
             }
 
@@ -350,16 +359,17 @@ Translate speech into natural, professional Korean using standard coffee industr
                 const direction = directionSelect.value;
                 recognition.lang = STT_LANG_MAP[direction] || 'en-US';
                 isRunning = true;
+                startIndex = 0;
+                pendingTranscript = "";
                 recognition.start();
                 startBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
                 settingsPanel.classList.add('settings-hidden');
                 showSettingsBtn.classList.remove('hidden');
                 liveOriginalText.textContent = "";
-                speechBuffer = ""; // 시작할 때 버퍼 초기화
             } catch (err) {
-                alert("마이크 시작 오류: " + err.message);
-                updateStatus("마이크 시작 오류", "text-red-400", "bg-gray-900");
+                alert("Microphone start error: " + err.message);
+                updateStatus("Mic Start Error", "text-red-400", "bg-gray-900");
             }
         });
 
