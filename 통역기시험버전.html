@@ -1,0 +1,253 @@
+```html
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>비즈니스 커핑 실시간 통역기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 프로젝터 시인성을 위한 텍스트 그림자 및 부드러운 전환 효과 */
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
+        .text-shadow { text-shadow: 3px 3px 6px rgba(0,0,0,0.9); }
+        .fade-in { animation: fadeIn 0.4s ease-in-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* 설정 패널 숨김 애니메이션 */
+        .settings-hidden { transform: translateY(-100%); }
+    </style>
+</head>
+<body class="bg-black text-white h-screen w-screen overflow-hidden flex flex-col">
+
+    <!-- 설정 패널 (마우스를 올리거나 클릭하여 제어) -->
+    <div id="settingsPanel" class="absolute top-0 w-full bg-gray-900 border-b border-gray-700 p-4 z-50 flex flex-wrap gap-4 items-center justify-center transition-transform duration-300 shadow-2xl">
+        <div class="flex items-center gap-2">
+            <label for="apiKey" class="text-gray-400 text-sm font-semibold">Gemini API Key</label>
+            <input type="password" id="apiKey" placeholder="AIzaSy..." class="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 w-64 focus:outline-none focus:border-blue-500 text-sm">
+        </div>
+        
+        <div class="flex items-center gap-2">
+            <label for="language" class="text-gray-400 text-sm font-semibold">음성 언어</label>
+            <select id="language" class="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-sm">
+                <option value="es-CO">Spanish (Colombia) - 스페인어</option>
+                <option value="en-US">English (US) - 영어</option>
+            </select>
+        </div>
+
+        <button id="startBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded transition shadow-lg">마이크 켜기 (Start)</button>
+        <button id="stopBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition shadow-lg hidden">마이크 끄기 (Stop)</button>
+        
+        <button id="hideSettingsBtn" class="absolute right-4 top-4 text-gray-400 hover:text-white text-sm bg-gray-800 px-3 py-1 rounded">▲ 패널 숨기기</button>
+    </div>
+
+    <!-- 숨겨졌을 때 나타나는 패널 표시 버튼 -->
+    <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ 설정 열기</button>
+
+    <!-- 프로젝터 메인 스크린 영역 -->
+    <div class="flex-grow flex flex-col items-center justify-center p-12 text-center relative z-10 w-full max-w-[90%] mx-auto">
+        <!-- 원문 표시 (작고 어둡게) -->
+        <div id="originalText" class="text-gray-400 text-3xl md:text-4xl mb-6 min-h-[3rem] font-light italic">
+            <!-- 음성 인식된 스페인어/영어가 여기에 표시됩니다 -->
+        </div>
+        
+        <!-- 번역문 표시 (크고 밝게) -->
+        <div id="translatedText" class="text-white text-6xl md:text-7xl lg:text-[6rem] font-bold leading-tight min-h-[10rem] text-shadow break-keep w-full">
+            대기 중입니다.<br><span class="text-3xl text-gray-500 font-normal">상단 설정에서 API Key 입력 후 마이크를 켜주세요.</span>
+        </div>
+    </div>
+
+    <!-- 하단 상태 표시줄 -->
+    <div class="absolute bottom-6 left-0 right-0 text-center z-10">
+        <span id="statusIndicator" class="inline-block px-5 py-2 rounded-full bg-gray-900 text-gray-400 text-sm font-semibold border border-gray-700 shadow-lg transition-colors duration-300">
+            상태: 준비됨 (Ready)
+        </span>
+    </div>
+
+    <script>
+        // DOM 요소 가져오기
+        const settingsPanel = document.getElementById('settingsPanel');
+        const hideSettingsBtn = document.getElementById('hideSettingsBtn');
+        const showSettingsBtn = document.getElementById('showSettingsBtn');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const apiKeyInput = document.getElementById('apiKey');
+        const languageSelect = document.getElementById('language');
+        const originalTextEl = document.getElementById('originalText');
+        const translatedTextEl = document.getElementById('translatedText');
+        const statusIndicator = document.getElementById('statusIndicator');
+
+        // Web Speech API 초기화
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        let isRunning = false;
+
+        if (!SpeechRecognition) {
+            updateStatus("오류: 현재 브라우저(크롬 권장)는 음성 인식을 지원하지 않습니다.", "text-red-400", "bg-red-900");
+            translatedTextEl.innerHTML = "이 브라우저에서는<br>음성 인식을 사용할 수 없습니다.";
+        } else {
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false; // 문장이 끝날 때만 결과 반환
+        }
+
+        // 상태 표시 업데이트 함수
+        function updateStatus(message, textColor = "text-gray-400", bgColor = "bg-gray-900") {
+            statusIndicator.textContent = message;
+            statusIndicator.className = `inline-block px-5 py-2 rounded-full text-sm font-semibold border border-gray-700 shadow-lg transition-colors duration-300 ${textColor} ${bgColor}`;
+        }
+
+        // 텍스트 페이드인 애니메이션 적용 함수
+        function animateTextChange(element, newText) {
+            element.classList.remove('fade-in');
+            void element.offsetWidth; // Reflow 트리거 (애니메이션 재시작을 위해 필수)
+            element.innerHTML = newText;
+            element.classList.add('fade-in');
+        }
+
+        // Gemini API 번역 요청 함수
+        async function translateTextWithGemini(text) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                throw new Error("API Key가 입력되지 않았습니다.");
+            }
+
+            // 커피 전문 통역 프롬프트
+            const systemPrompt = `당신은 스페셜티 커피 비즈니스 커핑 전문 동시통역사입니다.
+입력되는 텍스트를 자연스럽고 전문적인 한국어로 번역하세요. 
+[필수 번역 원칙]
+1. 'Beneficio'는 '이익/혜택'이 아니라 반드시 '가공장' 또는 '습식 가공소'로 번역.
+2. 'Lavado'는 '세탁'이 아니라 '워시드', 'Natural'은 '내추럴', 'Anaerobic'은 '무산소 발효'로 번역.
+3. 'Finca'는 '농장', 'Lote'는 '로트/생산구획', 'Pergamino'는 '파치먼트'로 번역.
+4. 'Castillo', 'Geisha', 'Caturra' 등은 품종 이름이므로 소리나는 대로 표기.
+5. 설명, 인사말, 마크다운 기호를 일절 빼고 오직 한국어 번역 결과 문장만 깔끔하게 반환할 것.`;
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: text }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    temperature: 0.2 // 일관된 번역을 위해 온도를 낮춤
+                }
+            };
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                console.error(errData);
+                throw new Error(`API 오류 (${response.status})`);
+            }
+
+            const result = await response.json();
+            const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            
+            if (!translatedText) throw new Error("번역 결과를 받을 수 없습니다.");
+            return translatedText.replace(/\n/g, '<br>'); // 줄바꿈 처리
+        }
+
+        // 음성 인식 이벤트 핸들러 설정
+        if (recognition) {
+            recognition.onstart = () => {
+                updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
+            };
+
+            recognition.onresult = async (event) => {
+                // 가장 최근의 인식 결과 가져오기
+                const current = event.resultIndex;
+                const transcript = event.results[current][0].transcript.trim();
+
+                if (transcript) {
+                    animateTextChange(originalTextEl, transcript);
+                    updateStatus("AI 번역 중... (Translating)", "text-yellow-400", "bg-gray-900");
+                    translatedTextEl.classList.remove('fade-in'); // 로딩 중 흐려짐 효과 대비
+
+                    try {
+                        const translated = await translateTextWithGemini(transcript);
+                        animateTextChange(translatedTextEl, translated);
+                        updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
+                    } catch (error) {
+                        animateTextChange(translatedTextEl, `<span class="text-red-500 text-5xl">번역 실패: ${error.message}</span>`);
+                        updateStatus("번역 오류 발생", "text-red-400", "bg-gray-900");
+                    }
+                }
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error !== 'no-speech') { // 말을 안해서 생기는 오류는 무시
+                    updateStatus(`인식 오류: ${event.error}`, "text-red-400", "bg-gray-900");
+                    console.error("Speech Recognition Error:", event.error);
+                }
+            };
+
+            recognition.onend = () => {
+                // 사용자가 명시적으로 중지하지 않았다면 끊어져도 자동 재시작 (크롬 브라우저 특성 방어)
+                if (isRunning) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        // 이미 시작된 상태에서 start() 호출 시 무시
+                    }
+                } else {
+                    updateStatus("마이크 중지됨 (Stopped)", "text-gray-400", "bg-gray-900");
+                }
+            };
+        }
+
+        // 버튼 이벤트 리스너
+        startBtn.addEventListener('click', () => {
+            if (!apiKeyInput.value.trim()) {
+                updateStatus("API Key를 먼저 입력해주세요.", "text-red-400", "bg-gray-900");
+                apiKeyInput.focus();
+                return;
+            }
+            if (recognition) {
+                recognition.lang = languageSelect.value;
+                isRunning = true;
+                try { recognition.start(); } catch(e) {}
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                settingsPanel.classList.add('settings-hidden');
+                showSettingsBtn.classList.remove('hidden');
+                
+                translatedTextEl.innerHTML = "<span class='text-gray-500'>발표자의 음성을 기다리고 있습니다...</span>";
+                originalTextEl.innerHTML = "";
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (recognition) {
+                isRunning = false;
+                recognition.stop();
+                stopBtn.classList.add('hidden');
+                startBtn.classList.remove('hidden');
+            }
+        });
+
+        // UI 패널 제어
+        hideSettingsBtn.addEventListener('click', () => {
+            settingsPanel.classList.add('settings-hidden');
+            showSettingsBtn.classList.remove('hidden');
+        });
+
+        showSettingsBtn.addEventListener('click', () => {
+            settingsPanel.classList.remove('settings-hidden');
+            showSettingsBtn.classList.add('hidden');
+        });
+
+        // 언어 변경 시, 실행 중이면 인식기를 재시작하여 적용
+        languageSelect.addEventListener('change', () => {
+            if (isRunning && recognition) {
+                recognition.stop(); // onend 이벤트에서 변경된 언어로 자동 재시작됨
+            }
+        });
+    </script>
+</body>
+</html>
+```
