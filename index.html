@@ -46,7 +46,7 @@
     <!-- 설정 패널 토글 버튼 -->
     <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ 설정 열기</button>
 
-    <!-- 자막 히스토리 스택 영역 (최대 10문장 & 자동 스크롤) -->
+    <!-- 자막 히스토리 스택 영역 -->
     <div id="subtitlesContainer" class="flex-grow overflow-y-auto no-scrollbar px-6 md:px-16 pt-16 pb-6 w-full max-w-6xl mx-auto z-10 flex flex-col justify-end">
         <div id="subtitlesList" class="flex flex-col gap-3 w-full">
             <div class="text-gray-600 text-lg md:text-2xl text-center py-10">
@@ -91,7 +91,6 @@
             console.warn("localStorage 접근 불가");
         }
 
-        // 방향별 음성 인식 언어(STT) 매핑
         const STT_LANG_MAP = {
             'es-to-ko': 'es-CO',
             'en-to-ko': 'en-US',
@@ -156,7 +155,6 @@
             });
         }
 
-        // 방향별 커피 전문 시스템 프롬프트 생성기
         function getSystemPrompt(direction) {
             if (direction === 'ko-to-es') {
                 return `Eres un intérprete simultáneo profesional especializado en catas de café de especialidad.
@@ -176,7 +174,6 @@ Translate the Korean spoken input into natural, fluent English using coffee indu
 - 농장 -> Farm / Finca, 로트 -> Lot
 - Output ONLY the English translation. No greetings, no explanations.`;
             } else {
-                // es-to-ko & en-to-ko
                 return `You are a specialty coffee simultaneous interpreter.
 Translate speech into natural, professional Korean using standard coffee industry terms.
 - Beneficio -> 가공장 (NEVER '이익' or '혜택')
@@ -255,7 +252,7 @@ Translate speech into natural, professional Korean using standard coffee industr
         }
 
         let silenceTimer = null;
-        let speechBuffer = "";
+        let speechBuffer = ""; // ★ 여러 문장을 누적해서 담을 버퍼 변수
 
         if (recognition) {
             recognition.onstart = () => {
@@ -268,22 +265,29 @@ Translate speech into natural, professional Korean using standard coffee industr
 
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
+                        // 확정된 문장 뒤에 공백을 주어 띄어쓰기 유지
+                        finalTranscript += event.results[i][0].transcript + ' ';
                     } else {
                         interimTranscript += event.results[i][0].transcript;
                     }
                 }
 
-                const currentSpeech = (finalTranscript || interimTranscript).trim();
+                // ★ 핵심: 확정된 문장이 생기면 버퍼에 영구 누적함 (3초 타이머가 초기화되지 않는 한 보존됨)
+                if (finalTranscript) {
+                    speechBuffer += finalTranscript;
+                }
+
+                // 화면에 실시간으로 띄워줄 전체 문장 = (지금까지 확정된 누적 문장) + (현재 말하고 있는 미확정 문장)
+                const currentSpeech = (speechBuffer + interimTranscript).trim();
 
                 if (currentSpeech) {
-                    speechBuffer = currentSpeech;
-                    liveOriginalText.textContent = `🎙️ ${speechBuffer}`;
+                    liveOriginalText.textContent = `🎙️ ${currentSpeech}`;
 
                     clearTimeout(silenceTimer);
+                    // 3초 침묵 감지 후 한꺼번에 번역
                     silenceTimer = setTimeout(async () => {
-                        const textToTranslate = speechBuffer;
-                        speechBuffer = "";
+                        const textToTranslate = currentSpeech;
+                        speechBuffer = ""; // ★ 번역에 들어가면 다음 덩어리를 위해 누적 버퍼를 비워줌
                         liveOriginalText.textContent = "";
 
                         if (textToTranslate) {
@@ -308,7 +312,7 @@ Translate speech into natural, professional Korean using standard coffee industr
                                 updateStatus(`번역 오류`, "text-red-400", "bg-gray-900");
                             }
                         }
-                    }, 3000);
+                    }, 2000); // 2초 대기
                 }
             };
 
@@ -352,6 +356,7 @@ Translate speech into natural, professional Korean using standard coffee industr
                 settingsPanel.classList.add('settings-hidden');
                 showSettingsBtn.classList.remove('hidden');
                 liveOriginalText.textContent = "";
+                speechBuffer = ""; // 시작할 때 버퍼 초기화
             } catch (err) {
                 alert("마이크 시작 오류: " + err.message);
                 updateStatus("마이크 시작 오류", "text-red-400", "bg-gray-900");
@@ -377,7 +382,6 @@ Translate speech into natural, professional Korean using standard coffee industr
             showSettingsBtn.classList.add('hidden');
         });
 
-        // 통역 모드 변경 시, 실행 중이면 바뀐 언어로 즉시 마이크 재시작
         directionSelect.addEventListener('change', () => {
             if (isRunning && recognition) {
                 const direction = directionSelect.value;
