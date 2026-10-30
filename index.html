@@ -46,7 +46,7 @@
     <!-- Toggle Settings Button -->
     <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ Settings</button>
 
-    <!-- Subtitle History Stack Container (Full text wrap, no ellipsis) -->
+    <!-- Subtitle History Stack Container (10 sentences, auto-scroll, full-text wrap) -->
     <div id="subtitlesContainer" class="flex-grow overflow-y-auto no-scrollbar px-6 md:px-16 pt-16 pb-6 w-full max-w-6xl mx-auto z-10 flex flex-col justify-end">
         <div id="subtitlesList" class="flex flex-col gap-4 w-full">
             <div class="text-gray-600 text-lg md:text-2xl text-center py-10">
@@ -101,8 +101,6 @@
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
         let isRunning = false;
-        let recognitionSessionId = 0;
-        let startIndex = 0;
 
         if (SpeechRecognition) {
             try {
@@ -155,6 +153,38 @@
             requestAnimationFrame(() => {
                 subtitlesContainer.scrollTop = subtitlesContainer.scrollHeight;
             });
+        }
+
+        // 지능형 문맥 병합 및 중복 제거 알고리즘
+        function cleanAndMergeTranscripts(rawList) {
+            const chunks = [];
+            for (const raw of rawList) {
+                const text = raw.trim();
+                if (!text) continue;
+                if (chunks.length === 0) {
+                    chunks.push(text);
+                    continue;
+                }
+                const last = chunks[chunks.length - 1];
+
+                // 특수문자 및 공백 제거 정규화 비교
+                const cleanText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+                const cleanLast = last.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+
+                if (cleanText === cleanLast) {
+                    if (text.length > last.length) chunks[chunks.length - 1] = text;
+                    continue;
+                }
+                if (cleanText.startsWith(cleanLast)) {
+                    chunks[chunks.length - 1] = text; // 확장된 최신 가설로 교체
+                    continue;
+                }
+                if (cleanLast.startsWith(cleanText)) {
+                    continue;
+                }
+                chunks.push(text);
+            }
+            return chunks.join(' ');
         }
 
         function getSystemPrompt(direction) {
@@ -254,49 +284,35 @@ Translate speech into natural, professional Korean using standard coffee industr
         }
 
         let silenceTimer = null;
-        let pendingTranscript = "";
+        let accumulatedText = ""; // 3초 침묵 전까지 여러 발화 세션을 영구 보존할 버퍼
+        let currentSessionText = "";
 
         if (recognition) {
             recognition.onstart = () => {
-                recognitionSessionId++;
-                startIndex = 0;
                 updateStatus("Mic Active: Listening...", "text-green-400", "bg-gray-900");
             };
 
             recognition.onresult = (event) => {
-                let finalPart = '';
-                let interimPart = '';
-
-                // startIndex부터 현재 결과까지만 정확하게 순회 (반복 에코 버그 원천 제거)
-                for (let i = startIndex; i < event.results.length; ++i) {
-                    const text = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalPart += text + ' ';
-                    } else {
-                        interimPart += text;
-                    }
+                const rawList = [];
+                for (let i = 0; i < event.results.length; ++i) {
+                    rawList.push(event.results[i][0].transcript);
                 }
 
-                const currentSpeech = (finalPart + interimPart).trim();
+                // 현재 세션의 중간/확정 텍스트를 중복 없이 정제
+                currentSessionText = cleanAndMergeTranscripts(rawList);
 
-                if (currentSpeech) {
-                    pendingTranscript = currentSpeech;
-                    liveOriginalText.textContent = `🎙️ ${currentSpeech}`;
+                // 이전 누적분과 현재 세션분을 합쳐 중복 여부 최종 재검증
+                const fullSpeech = cleanAndMergeTranscripts([accumulatedText, currentSessionText]);
+
+                if (fullSpeech) {
+                    liveOriginalText.textContent = `🎙️ ${fullSpeech}`;
 
                     clearTimeout(silenceTimer);
-                    const currentSession = recognitionSessionId;
-
-                    // 3초 침묵 감지
+                    // 3초간 말이 완전히 멈추면 한 덩어리로 묶어 Gemini 번역 요청
                     silenceTimer = setTimeout(async () => {
-                        const textToTranslate = pendingTranscript;
-                        pendingTranscript = "";
-                        
-                        // 현재까지 인식된 모든 결과 인덱스를 건너뜀
-                        if (recognitionSessionId === currentSession) {
-                            startIndex = event.results.length;
-                        } else {
-                            startIndex = 0;
-                        }
+                        const textToTranslate = fullSpeech;
+                        accumulatedText = "";
+                        currentSessionText = "";
                         liveOriginalText.textContent = "";
 
                         if (textToTranslate) {
@@ -332,8 +348,19 @@ Translate speech into natural, professional Korean using standard coffee industr
             };
 
             recognition.onend = () => {
+                // 세션이 끊길 때 인식된 내용을 accumulatedText에 영구 병합 보존
+                if (currentSessionText) {
+                    accumulatedText = cleanAndMergeTranscripts([accumulatedText, currentSessionText]);
+                    currentSessionText = "";
+                }
+
+                // 마이크가 켜져 있는 동안에는 150ms 후 안전하게 재가동하여 마이크 먹통 차단
                 if (isRunning) {
-                    try { recognition.start(); } catch (e) {}
+                    setTimeout(() => {
+                        if (isRunning) {
+                            try { recognition.start(); } catch (e) {}
+                        }
+                    }, 150);
                 } else {
                     updateStatus("Status: Stopped", "text-gray-400", "bg-gray-900");
                 }
@@ -359,8 +386,8 @@ Translate speech into natural, professional Korean using standard coffee industr
                 const direction = directionSelect.value;
                 recognition.lang = STT_LANG_MAP[direction] || 'en-US';
                 isRunning = true;
-                startIndex = 0;
-                pendingTranscript = "";
+                accumulatedText = "";
+                currentSessionText = "";
                 recognition.start();
                 startBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
@@ -376,6 +403,7 @@ Translate speech into natural, professional Korean using standard coffee industr
         stopBtn.addEventListener('click', () => {
             if (recognition) {
                 isRunning = false;
+                clearTimeout(silenceTimer);
                 recognition.stop();
                 stopBtn.classList.add('hidden');
                 startBtn.classList.remove('hidden');
