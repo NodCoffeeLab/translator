@@ -14,6 +14,8 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .settings-hidden { transform: translateY(-100%); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="bg-black text-white h-screen w-screen overflow-hidden flex flex-col justify-between">
@@ -26,10 +28,12 @@
         </div>
         
         <div class="flex items-center gap-2">
-            <label for="language" class="text-gray-400 text-sm font-semibold">음성 언어</label>
-            <select id="language" class="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-sm">
-                <option value="en-US">English (US) - 영어</option>
-                <option value="es-CO">Spanish (Colombia) - 스페인어</option>
+            <label for="directionSelect" class="text-gray-400 text-sm font-semibold">통역 방향</label>
+            <select id="directionSelect" class="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-sm">
+                <option value="es-to-ko">스페인어 ➔ 한국어 (생산자 세션)</option>
+                <option value="en-to-ko">영어 ➔ 한국어 (발표 세션)</option>
+                <option value="ko-to-es">한국어 ➔ 스페인어 (Q&A 세션)</option>
+                <option value="ko-to-en">한국어 ➔ 영어 (Q&A 세션)</option>
             </select>
         </div>
 
@@ -42,16 +46,16 @@
     <!-- 설정 패널 토글 버튼 -->
     <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ 설정 열기</button>
 
-    <!-- 자막 히스토리 스택 영역 (최근 3문장 유지) -->
-    <div class="flex-grow flex flex-col justify-end px-6 md:px-16 pb-16 w-full max-w-6xl mx-auto z-10">
-        <div id="subtitlesList" class="flex flex-col gap-4 w-full">
-            <div class="text-gray-600 text-xl md:text-3xl text-center py-10">
-                대기 중입니다. 상단 설정에서 API Key 확인 후 마이크를 켜주세요.
+    <!-- 자막 히스토리 스택 영역 (최대 10문장 & 자동 스크롤) -->
+    <div id="subtitlesContainer" class="flex-grow overflow-y-auto no-scrollbar px-6 md:px-16 pt-16 pb-6 w-full max-w-6xl mx-auto z-10 flex flex-col justify-end">
+        <div id="subtitlesList" class="flex flex-col gap-3 w-full">
+            <div class="text-gray-600 text-lg md:text-2xl text-center py-10">
+                대기 중입니다. 상단 설정에서 통역 방향과 API Key 확인 후 마이크를 켜주세요.
             </div>
         </div>
 
         <!-- 실시간 마이크 수음 표시줄 -->
-        <div id="liveOriginalText" class="text-cyan-400 text-sm md:text-lg italic mt-4 min-h-[1.5rem] tracking-wide font-light truncate"></div>
+        <div id="liveOriginalText" class="text-cyan-400 text-sm md:text-base italic mt-3 min-h-[1.5rem] tracking-wide font-light truncate"></div>
     </div>
 
     <!-- 하단 상태 표시줄 -->
@@ -68,15 +72,15 @@
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         const apiKeyInput = document.getElementById('apiKey');
-        const languageSelect = document.getElementById('language');
+        const directionSelect = document.getElementById('directionSelect');
+        const subtitlesContainer = document.getElementById('subtitlesContainer');
         const subtitlesList = document.getElementById('subtitlesList');
         const liveOriginalText = document.getElementById('liveOriginalText');
         const statusIndicator = document.getElementById('statusIndicator');
 
         const subtitleHistory = [];
-        const MAX_HISTORY = 3;
+        const MAX_HISTORY = 10;
 
-        // 시크릿 모드에서도 에러 없이 안전하게 동작하도록 예외 처리
         try {
             const savedKey = localStorage.getItem('GEMINI_API_KEY');
             if (savedKey) apiKeyInput.value = savedKey;
@@ -84,8 +88,16 @@
                 try { localStorage.setItem('GEMINI_API_KEY', apiKeyInput.value.trim()); } catch(e) {}
             });
         } catch (e) {
-            console.warn("시크릿 모드: localStorage 접근 제한됨");
+            console.warn("localStorage 접근 불가");
         }
+
+        // 방향별 음성 인식 언어(STT) 매핑
+        const STT_LANG_MAP = {
+            'es-to-ko': 'es-CO',
+            'en-to-ko': 'en-US',
+            'ko-to-es': 'ko-KR',
+            'ko-to-en': 'ko-KR'
+        };
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
@@ -114,26 +126,65 @@
                 const distance = total - 1 - index;
 
                 let opacityClass = "opacity-100";
-                let originalSize = "text-xs md:text-base text-gray-400";
-                let translatedSize = "text-2xl md:text-4xl font-bold text-white text-shadow";
+                let originalSize = "text-xs md:text-sm text-gray-400";
+                let translatedSize = "text-xl md:text-3xl font-bold text-white text-shadow";
 
-                if (distance === 1) {
-                    opacityClass = "opacity-60";
-                    originalSize = "text-xs md:text-sm text-gray-500";
-                    translatedSize = "text-lg md:text-2xl font-semibold text-gray-300";
-                } else if (distance >= 2) {
+                if (distance === 1 || distance === 2) {
+                    opacityClass = "opacity-85";
+                    originalSize = "text-xs text-gray-500";
+                    translatedSize = "text-lg md:text-2xl font-semibold text-gray-200";
+                } else if (distance >= 3 && distance <= 5) {
+                    opacityClass = "opacity-55";
+                    originalSize = "text-[11px] text-gray-600";
+                    translatedSize = "text-base md:text-xl font-medium text-gray-400";
+                } else if (distance > 5) {
                     opacityClass = "opacity-30";
-                    originalSize = "text-[10px] md:text-xs text-gray-600";
-                    translatedSize = "text-base md:text-lg font-normal text-gray-400";
+                    originalSize = "text-[10px] text-gray-700";
+                    translatedSize = "text-sm md:text-base font-normal text-gray-500";
                 }
 
                 return `
-                    <div class="fade-in transition-all duration-300 ${opacityClass} border-b border-gray-900 pb-2">
-                        <div class="${originalSize} italic mb-1 truncate">${item.original}</div>
+                    <div class="fade-in transition-all duration-200 ${opacityClass} border-b border-gray-900 pb-2">
+                        <div class="${originalSize} italic mb-0.5 truncate">${item.original}</div>
                         <div class="${translatedSize} leading-snug break-keep">${item.translated}</div>
                     </div>
                 `;
             }).join('');
+
+            requestAnimationFrame(() => {
+                subtitlesContainer.scrollTop = subtitlesContainer.scrollHeight;
+            });
+        }
+
+        // 방향별 커피 전문 시스템 프롬프트 생성기
+        function getSystemPrompt(direction) {
+            if (direction === 'ko-to-es') {
+                return `Eres un intérprete simultáneo profesional especializado en catas de café de especialidad.
+Traduce el texto hablado en coreano a un español natural y profesional para productores y catadores latinoamericanos.
+- 워시드 -> Lavado (NUNCA 'lavandería' ni 'ropa lavada')
+- 내추럴 -> Natural, 무산소 발효 -> Fermentación anaeróbica, 탄산침용 -> Maceración carbónica
+- 가공장 / 습식가공소 -> Beneficio húmedo, 파치먼트 -> Café pergamino, 생두 -> Café verde
+- 농장 -> Finca, 로트 -> Lote
+- Salida ÚNICAMENTE la traducción en español. Sin saludos, sin notas explicativas.`;
+            } else if (direction === 'ko-to-en') {
+                return `You are a professional simultaneous interpreter specialized in specialty coffee cupping.
+Translate the Korean spoken input into natural, fluent English using coffee industry standards.
+- 워시드 -> Washed process, 내추럴 -> Natural process
+- 무산소 발효 -> Anaerobic fermentation, 탄산침용 -> Carbonic maceration
+- 가공장 -> Wet mill / Washing station / Processing facility
+- 파치먼트 -> Parchment coffee, 생두 -> Green coffee
+- 농장 -> Farm / Finca, 로트 -> Lot
+- Output ONLY the English translation. No greetings, no explanations.`;
+            } else {
+                // es-to-ko & en-to-ko
+                return `You are a specialty coffee simultaneous interpreter.
+Translate speech into natural, professional Korean using standard coffee industry terms.
+- Beneficio -> 가공장 (NEVER '이익' or '혜택')
+- Lavado -> 워시드 (NEVER '세탁')
+- Natural -> 내추럴, Anaerobic -> 무산소 발효
+- Finca -> 농장, Lote -> 로트, Pergamino -> 파치먼트
+- Output ONLY the Korean translation. No greetings, no notes.`;
+            }
         }
 
         const MODEL_CANDIDATES = ['gemini-3.5-flash', 'gemini-3.5-flash-lite'];
@@ -143,13 +194,8 @@
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) throw new Error("API Key 없음");
 
-            const systemPrompt = `You are a specialty coffee simultaneous interpreter.
-Translate speech into natural, professional Korean using standard coffee industry terms.
-- Beneficio -> 가공장 (NEVER '이익' or '혜택')
-- Lavado -> 워시드 (NEVER '세탁')
-- Natural -> 내추럴, Anaerobic -> 무산소 발효
-- Finca -> 농장, Lote -> 로트, Pergamino -> 파치먼트
-- Output ONLY the Korean translation. No greetings, no notes.`;
+            const direction = directionSelect.value;
+            const systemPrompt = getSystemPrompt(direction);
 
             const payload = {
                 contents: [{ parts: [{ text: text }] }],
@@ -182,6 +228,22 @@ Translate speech into natural, professional Korean using standard coffee industr
                             return translated.trim();
                         }
                     } else {
+                        if (response.status === 400 && payload.generationConfig?.thinkingConfig) {
+                            delete payload.generationConfig.thinkingConfig;
+                            const retryRes = await fetch(apiUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            if (retryRes.ok) {
+                                const retryResult = await retryRes.json();
+                                const translated = retryResult.candidates?.[0]?.content?.parts?.[0]?.text;
+                                if (translated) {
+                                    activeModel = model;
+                                    return translated.trim();
+                                }
+                            }
+                        }
                         const errData = await response.json().catch(() => ({}));
                         lastErrorMsg = errData.error?.message || `HTTP ${response.status}`;
                     }
@@ -219,7 +281,6 @@ Translate speech into natural, professional Korean using standard coffee industr
                     liveOriginalText.textContent = `🎙️ ${speechBuffer}`;
 
                     clearTimeout(silenceTimer);
-                    // ★ 3초(3000ms) 침묵 감지 후 번역 실행
                     silenceTimer = setTimeout(async () => {
                         const textToTranslate = speechBuffer;
                         speechBuffer = "";
@@ -228,7 +289,7 @@ Translate speech into natural, professional Korean using standard coffee industr
                         if (textToTranslate) {
                             const currentItem = {
                                 original: textToTranslate,
-                                translated: '<span class="text-yellow-400 animate-pulse text-lg md:text-2xl">⏳ 번역 중...</span>'
+                                translated: '<span class="text-yellow-400 animate-pulse text-base md:text-xl">⏳ 번역 중...</span>'
                             };
                             subtitleHistory.push(currentItem);
                             if (subtitleHistory.length > MAX_HISTORY) subtitleHistory.shift();
@@ -247,7 +308,7 @@ Translate speech into natural, professional Korean using standard coffee industr
                                 updateStatus(`번역 오류`, "text-red-400", "bg-gray-900");
                             }
                         }
-                    }, 3000); // 3초 대기
+                    }, 3000);
                 }
             };
 
@@ -266,7 +327,6 @@ Translate speech into natural, professional Korean using standard coffee industr
             };
         }
 
-        // 버튼 클릭 제어
         startBtn.addEventListener('click', () => {
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
@@ -277,13 +337,14 @@ Translate speech into natural, professional Korean using standard coffee industr
             }
 
             if (!recognition) {
-                alert("현재 브라우저는 음성 인식을 지원하지 않습니다.\n카카오톡 인앱 브라우저 등이 아닌 순수 크롬(Chrome) 앱에서 열어주세요.");
+                alert("현재 브라우저는 음성 인식을 지원하지 않습니다.\nChrome 브라우저에서 열어주세요.");
                 updateStatus("오류: 음성 인식 미지원 브라우저", "text-red-400", "bg-gray-900");
                 return;
             }
 
             try {
-                recognition.lang = languageSelect.value;
+                const direction = directionSelect.value;
+                recognition.lang = STT_LANG_MAP[direction] || 'en-US';
                 isRunning = true;
                 recognition.start();
                 startBtn.classList.add('hidden');
@@ -316,8 +377,11 @@ Translate speech into natural, professional Korean using standard coffee industr
             showSettingsBtn.classList.add('hidden');
         });
 
-        languageSelect.addEventListener('change', () => {
+        // 통역 모드 변경 시, 실행 중이면 바뀐 언어로 즉시 마이크 재시작
+        directionSelect.addEventListener('change', () => {
             if (isRunning && recognition) {
+                const direction = directionSelect.value;
+                recognition.lang = STT_LANG_MAP[direction] || 'en-US';
                 recognition.stop();
             }
         });
