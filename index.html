@@ -123,7 +123,7 @@
 4. 'Castillo', 'Geisha', 'Caturra' 등은 품종 이름이므로 소리나는 대로 표기.
 5. 설명, 인사말, 마크다운 기호를 일절 빼고 오직 한국어 번역 결과 문장만 깔끔하게 반환할 것.`;
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
             
             const payload = {
                 contents: [{ parts: [{ text: text }] }],
