@@ -18,7 +18,7 @@
 </head>
 <body class="bg-black text-white h-screen w-screen overflow-hidden flex flex-col justify-between">
 
-    <!-- 1. 상단 설정 패널 -->
+    <!-- 상단 설정 패널 -->
     <div id="settingsPanel" class="absolute top-0 w-full bg-gray-900 border-b border-gray-700 p-4 z-50 flex flex-wrap gap-4 items-center justify-center transition-transform duration-300 shadow-2xl">
         <div class="flex items-center gap-2">
             <label for="apiKey" class="text-gray-400 text-sm font-semibold">Gemini API Key</label>
@@ -39,22 +39,22 @@
         <button id="hideSettingsBtn" class="absolute right-4 top-4 text-gray-400 hover:text-white text-sm bg-gray-800 px-3 py-1 rounded">▲ 패널 숨기기</button>
     </div>
 
-    <!-- 숨김 상태일 때 나타나는 설정 열기 버튼 -->
+    <!-- 설정 패널 토글 버튼 -->
     <button id="showSettingsBtn" class="absolute right-4 top-4 text-gray-500 hover:text-white text-sm bg-gray-900 px-3 py-1 rounded z-40 hidden border border-gray-700 shadow-lg">▼ 설정 열기</button>
 
-    <!-- 2. 자막 히스토리 스택 영역 (최근 3개 문장 유지) -->
-    <div class="flex-grow flex flex-col justify-end px-6 md:px-16 pb-16 w-full max-w-3xl mx-auto z-10">
+    <!-- 자막 히스토리 스택 영역 -->
+    <div class="flex-grow flex flex-col justify-end px-6 md:px-16 pb-16 w-full max-w-6xl mx-auto z-10">
         <div id="subtitlesList" class="flex flex-col gap-4 w-full">
             <div class="text-gray-600 text-xl md:text-3xl text-center py-10">
                 대기 중입니다. 상단 설정에서 마이크를 켜주세요.
             </div>
         </div>
 
-        <!-- 실시간 인식 중인 발화 원문 표시줄 (말하는 도중에만 노출) -->
+        <!-- 실시간 마이크 수음 표시줄 -->
         <div id="liveOriginalText" class="text-cyan-400 text-sm md:text-lg italic mt-4 min-h-[1.5rem] tracking-wide font-light truncate"></div>
     </div>
 
-    <!-- 3. 하단 상태 표시줄 -->
+    <!-- 하단 상태 표시줄 -->
     <div class="w-full text-center pb-3 z-10">
         <span id="statusIndicator" class="inline-block px-4 py-1 rounded-full bg-gray-900 text-gray-400 text-xs md:text-sm font-semibold border border-gray-800 shadow">
             상태: 준비됨 (Ready)
@@ -73,18 +73,15 @@
         const liveOriginalText = document.getElementById('liveOriginalText');
         const statusIndicator = document.getElementById('statusIndicator');
 
-        // 최근 3개 자막을 저장하는 히스토리 배열
         const subtitleHistory = [];
         const MAX_HISTORY = 3;
 
-        // API Key 자동 저장 및 복원
         const savedKey = localStorage.getItem('GEMINI_API_KEY');
         if (savedKey) apiKeyInput.value = savedKey;
         apiKeyInput.addEventListener('input', () => {
             localStorage.setItem('GEMINI_API_KEY', apiKeyInput.value.trim());
         });
 
-        // Web Speech API 세팅
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
         let isRunning = false;
@@ -92,7 +89,7 @@
         if (SpeechRecognition) {
             recognition = new SpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = true; // 말하는 중간 과정도 실시간 수신
+            recognition.interimResults = true;
         }
 
         function updateStatus(message, textColor = "text-gray-400", bgColor = "bg-gray-900") {
@@ -100,26 +97,25 @@
             statusIndicator.className = `inline-block px-4 py-1 rounded-full text-xs md:text-sm font-semibold border border-gray-800 shadow ${textColor} ${bgColor}`;
         }
 
-        // 히스토리 렌더링 함수: 오래된 것일수록 위로, 작고 어둡게 배치
         function renderSubtitles() {
             if (subtitleHistory.length === 0) return;
 
             subtitlesList.innerHTML = subtitleHistory.map((item, index) => {
                 const total = subtitleHistory.length;
-                const distance = total - 1 - index; // 0: 최신, 1: 직전, 2: 2개 전
+                const distance = total - 1 - index;
 
                 let opacityClass = "opacity-100";
                 let originalSize = "text-xs md:text-base text-gray-400";
-                let translatedSize = "text-2xl md:text-3xl font-bold text-white text-shadow";
+                let translatedSize = "text-2xl md:text-4xl font-bold text-white text-shadow";
 
                 if (distance === 1) {
                     opacityClass = "opacity-60";
                     originalSize = "text-xs md:text-sm text-gray-500";
-                    translatedSize = "text-lg md:text-3xl font-semibold text-gray-300";
+                    translatedSize = "text-lg md:text-2xl font-semibold text-gray-300";
                 } else if (distance >= 2) {
                     opacityClass = "opacity-30";
                     originalSize = "text-[10px] md:text-xs text-gray-600";
-                    translatedSize = "text-base md:text-xl font-normal text-gray-400";
+                    translatedSize = "text-base md:text-lg font-normal text-gray-400";
                 }
 
                 return `
@@ -131,8 +127,7 @@
             }).join('');
         }
 
-        // Gemini 번역 함수
-        const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+        const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
         let activeModel = null;
 
         async function translateTextWithGemini(text) {
@@ -147,10 +142,16 @@ Translate speech into natural, professional Korean using standard coffee industr
 - Finca -> 농장, Lote -> 로트, Pergamino -> 파치먼트
 - Output ONLY the Korean translation. No greetings, no notes.`;
 
+            // ★ 핵심: thinkingBudget: 0 설정으로 추론 시간 제거 (딜레이 0.5초로 단축)
             const payload = {
                 contents: [{ parts: [{ text: text }] }],
                 systemInstruction: { parts: [{ text: systemPrompt }] },
-                generationConfig: { temperature: 0.2 }
+                generationConfig: { 
+                    temperature: 0.1,
+                    thinkingConfig: {
+                        thinkingBudget: 0
+                    }
+                }
             };
 
             const modelsToTry = activeModel ? [activeModel] : MODEL_CANDIDATES;
@@ -183,7 +184,6 @@ Translate speech into natural, professional Korean using standard coffee industr
             throw new Error(lastErrorMsg || "번역 호출 실패");
         }
 
-        // 실시간 음성 인식 및 침묵 감지(1.2초)
         let silenceTimer = null;
         let speechBuffer = "";
 
@@ -208,7 +208,6 @@ Translate speech into natural, professional Korean using standard coffee industr
 
                 if (currentSpeech) {
                     speechBuffer = currentSpeech;
-                    // 말하는 도중에는 하단에 수음 중인 문맥을 푸른색으로 실시간 표시
                     liveOriginalText.textContent = `🎙️ ${speechBuffer}`;
 
                     clearTimeout(silenceTimer);
@@ -218,22 +217,30 @@ Translate speech into natural, professional Korean using standard coffee industr
                         liveOriginalText.textContent = "";
 
                         if (textToTranslate) {
+                            // 1. 원문을 즉시 자막 창에 고정하고 '번역 중...' 상태 표시 (자막 증발 방지)
+                            const currentItem = {
+                                original: textToTranslate,
+                                translated: '<span class="text-yellow-400 animate-pulse text-lg md:text-2xl">⏳ 번역 중...</span>'
+                            };
+                            subtitleHistory.push(currentItem);
+                            if (subtitleHistory.length > MAX_HISTORY) subtitleHistory.shift();
+                            renderSubtitles();
+
                             updateStatus("AI 번역 중... (Translating)", "text-yellow-400", "bg-gray-900");
+
+                            // 2. 고속 번역 요청 (0.5초 소요)
                             try {
                                 const translated = await translateTextWithGemini(textToTranslate);
-                                
-                                // 새 번역 문장을 히스토리에 추가 (최대 3개 유지)
-                                subtitleHistory.push({ original: textToTranslate, translated: translated });
-                                if (subtitleHistory.length > MAX_HISTORY) {
-                                    subtitleHistory.shift();
-                                }
+                                currentItem.translated = translated;
                                 renderSubtitles();
                                 updateStatus("마이크 켜짐: 듣는 중... (Listening)", "text-green-400", "bg-gray-900");
                             } catch (error) {
-                                updateStatus(`번역 실패: ${error.message}`, "text-red-400", "bg-gray-900");
+                                currentItem.translated = `<span class="text-red-500">번역 실패: ${error.message}</span>`;
+                                renderSubtitles();
+                                updateStatus(`번역 오류`, "text-red-400", "bg-gray-900");
                             }
                         }
-                    }, 1200); // 1.2초간 발화 쉼 감지
+                    }, 1200); // 1.2초 침묵 감지
                 }
             };
 
@@ -252,7 +259,6 @@ Translate speech into natural, professional Korean using standard coffee industr
             };
         }
 
-        // 제어 버튼 이벤트
         startBtn.addEventListener('click', () => {
             if (!apiKeyInput.value.trim()) {
                 updateStatus("API Key를 먼저 입력해주세요.", "text-red-400", "bg-gray-900");
@@ -275,26 +281,3 @@ Translate speech into natural, professional Korean using standard coffee industr
             if (recognition) {
                 isRunning = false;
                 recognition.stop();
-                stopBtn.classList.add('hidden');
-                startBtn.classList.remove('hidden');
-            }
-        });
-
-        hideSettingsBtn.addEventListener('click', () => {
-            settingsPanel.classList.add('settings-hidden');
-            showSettingsBtn.classList.remove('hidden');
-        });
-
-        showSettingsBtn.addEventListener('click', () => {
-            settingsPanel.classList.remove('settings-hidden');
-            showSettingsBtn.classList.add('hidden');
-        });
-
-        languageSelect.addEventListener('change', () => {
-            if (isRunning && recognition) {
-                recognition.stop();
-            }
-        });
-    </script>
-</body>
-</html>
