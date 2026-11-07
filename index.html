@@ -396,8 +396,7 @@ Rule 3: If it is a complete thought (even if it's spoken language, trailing off 
                 });
                 contents.push({ role: 'user', parts: [{ text: task.text }] });
 
-                // 선생님이 사용하시는 3.6(1.5-pro/flash 등) 모델명으로 직접 수정하신 부분입니다.
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(endpoint, {
                     method: 'POST',
