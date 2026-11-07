@@ -469,14 +469,15 @@
             }
 
             try {
-                // 모바일 권한 획득
-                mediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
+                // 모바일 권한 획득 블루투스 마이크 및 모바일 입력 호환성 강제 지정
+mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+        echoCancellation: false, // 블루투스 자체 노이즈캔슬링과의 충돌 방지
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: 1
+    }
+});
 
                 // 모바일 크롬 지원 코덱 탐색
                 let mimeType = 'audio/webm';
