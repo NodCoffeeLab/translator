@@ -205,22 +205,22 @@
 
     <div class="header-panel">
         <div class="row">
-            <label>입력:
+            <label>Input:
                 <select id="inLang">
-                    <option value="ko" selected>한국어 (ko)</option>
-                    <option value="es">스페인어 (es)</option>
-                    <option value="en">영어 (en)</option>
+                    <option value="ko" selected>Korean (ko)</option>
+                    <option value="es">Spanish (es)</option>
+                    <option value="en">English (en)</option>
                 </select>
             </label>
-            <label>번역:
+            <label>Translate:
                 <select id="outLang">
-                    <option value="스페인어" selected>스페인어</option>
-                    <option value="한국어">한국어</option>
-                    <option value="영어">영어</option>
+                    <option value="Spanish (es)" selected>Spanish (es)</option>
+                    <option value="Korean (ko)">Korean (ko)</option>
+                    <option value="English (en)">English (en)</option>
                 </select>
             </label>
-            <button id="settingsToggleBtn">⚙️ 설정</button>
-            <button id="saveBtn">💾 저장</button>
+            <button id="settingsToggleBtn">⚙️ Setting</button>
+            <button id="saveBtn">💾 Export</button>
         </div>
 
         <div class="settings-panel" id="settingsPanel">
@@ -233,28 +233,28 @@
                 <input type="password" id="geminiKey" placeholder="Key 입력">
             </div>
             <div class="setting-group">
-                <label>입력어 폰트 크기</label>
+                <label>Source Font Size</label>
                 <input type="range" id="inputFontRange" min="14" max="36" value="18">
             </div>
             <div class="setting-group">
-                <label>번역어 폰트 크기</label>
+                <label>Target Font Size</label>
                 <input type="range" id="transFontRange" min="18" max="54" value="26">
             </div>
             <div class="setting-group">
-                <label>번역어 색상</label>
+                <label>Target Text Color</label>
                 <input type="color" id="transColorPick" value="#ffeb3b">
             </div>
             <div class="setting-group">
-                <label>배경 색상</label>
+                <label>Background Color</label>
                 <input type="color" id="bgColorPick" value="#121212">
             </div>
         </div>
 
         <div class="row">
-            <button id="micToggleBtn">🎙️ 마이크 켜기</button>
-            <button class="mode-btn active" id="autoModeBtn">⚡ 실시간 자동</button>
-            <button class="mode-btn" id="manualModeBtn">⏸️ 수동 모아번역</button>
-            <button id="manualTranslateBtn">🔄 지금 번역하기</button>
+            <button id="micToggleBtn">🎙️ Start Mic</button>
+            <button class="mode-btn active" id="autoModeBtn">⚡ Auto Live</button>
+            <button class="mode-btn" id="manualModeBtn">⏸️ Manual Batch</button>
+            <button id="manualTranslateBtn">🔄 Translate Now</button>
         </div>
     </div>
 
@@ -414,7 +414,7 @@
 
             } catch (err) {
                 console.error('번역 처리 오류:', err);
-                updateTranslationUI(task.boxId, `(번역 오류: ${err.message})`);
+                updateTranslationUI(task.boxId, `(Translation Error: ${err.message})`);
             } finally {
                 isTranslating = false;
                 setTimeout(processTranslationQueue, 150);
@@ -450,7 +450,7 @@
                     const transDiv = document.createElement('div');
                     transDiv.id = `trans-${boxId}`;
                     transDiv.className = 'target-text';
-                    transDiv.innerText = '... (번역 중) ...';
+                    transDiv.innerText = '... (Translating) ...';
                     box.appendChild(transDiv);
                 }
 
@@ -506,7 +506,7 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
 
                     mediaRecorder.start(250); // 250ms마다 오디오 청크 스트리밍
 
-                    micToggleBtn.innerText = '⏹️ 마이크 끄기 (통역 중)';
+                    micToggleBtn.innerText = '⏹️ Stop Mic';
                     micToggleBtn.classList.add('recording');
                     setControlsDisabled(true);
                 };
@@ -586,7 +586,7 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
             const transDiv = document.createElement('div');
             transDiv.id = `trans-${mergedId}`;
             transDiv.className = 'target-text';
-            transDiv.innerText = '... (통합 번역 중) ...';
+            transDiv.innerText = '... (Processing Batch) ...';
 
             mergedBox.appendChild(srcDiv);
             mergedBox.appendChild(transDiv);
