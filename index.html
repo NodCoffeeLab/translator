@@ -261,6 +261,34 @@
     <div id="display-container"></div>
 
     <script>
+        // [추가] 문장 누적용 버퍼 변수
+let semanticBuffer = "";
+let currentSemanticBoxId = null;
+
+// [추가] 문법 기반 문장 종결 판별기
+function isSentenceComplete(text, lang) {
+    if (!text || text.trim() === "") return false;
+    const t = text.trim();
+    
+    // 1. 공통: 구두점(. ? !)으로 끝나면 무조건 완결로 간주
+    if (/[.?!]$/.test(t)) return true;
+
+    if (lang === 'ko') {
+        // 한국어: 연결 어미(과/와, 고, 며, 는데 등)나 조사로 끝나면 미완성
+        if (/(고|며|와|과|근데|는데|지만|서|이제|그리고|은|는|이|가|을|를)$/.test(t)) return false;
+        // 한국어: 종결 어미(다, 요, 죠, 까, 네, 음, 함)로 끝나면 완결
+        if (/(다|요|죠|까|네|음|함)$/.test(t)) return true;
+    } else if (lang === 'en') {
+        // 영어: 접속사나 전치사로 끝나면 미완성 (Deepgram smart_format이 구두점을 안 찍어준 경우)
+        if (/(and|or|but|because|if|then|with|the|a|an|of|to|in|on|that|which|as)$/i.test(t)) return false;
+    } else if (lang === 'es') {
+        // 스페인어: 접속사나 관사 등으로 끝나면 미완성
+        if (/(y|o|pero|porque|si|con|el|la|los|las|de|a|en|que)$/i.test(t)) return false;
+    }
+    
+    // 기본적으로 구두점이 없으면 말을 쉬는 중(미완성)으로 간주하여 더 대기
+    return false;
+}
         let deepgramSocket = null;
         let mediaRecorder = null;
         let mediaStream = null;
@@ -512,39 +540,55 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
                 };
 
                 deepgramSocket.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    if (!data.channel?.alternatives?.[0]) return;
+    const data = JSON.parse(event.data);
+    if (!data.channel?.alternatives?.[0]) return;
 
-                    const transcript = data.channel.alternatives[0].transcript;
-                    if (!transcript) return;
+    const transcript = data.channel.alternatives[0].transcript;
+    if (!transcript) return;
 
-                    const isFinal = data.is_final;
-                    getOrCreateBox(activeBoxId);
+    const isFinal = data.is_final;
 
-                    const srcDiv = document.getElementById(`src-${activeBoxId}`);
-                    if (srcDiv) {
-                        srcDiv.innerText = transcript;
-                    }
+    // 현재 사용 중인 박스 ID가 없으면 새로 발급
+    if (!currentSemanticBoxId) {
+        currentSemanticBoxId = `seq-${++sentenceSeq}`;
+    }
 
-                    if (isFinal) {
-                        if (srcDiv) srcDiv.classList.remove('interim');
+    getOrCreateBox(currentSemanticBoxId);
+    const srcDiv = document.getElementById(`src-${currentSemanticBoxId}`);
+    
+    // 화면에는 기존 누적된 버퍼에 현재 들리는 말을 실시간으로 이어 붙여서 출력
+    const combinedText = (semanticBuffer + " " + transcript).trim();
+    if (srcDiv) {
+        srcDiv.innerText = combinedText;
+    }
 
-                        const finalizedText = transcript.trim();
-                        const currentBoxId = activeBoxId;
+    // 침묵 감지(is_final) 시 문법적 완결성 검사 수행
+    if (isFinal) {
+        const lang = inLangSelect.value;
+        
+        // 문장이 완성되었다고 판단될 때만 번역 큐로 전송
+        if (isSentenceComplete(combinedText, lang)) {
+            if (srcDiv) srcDiv.classList.remove('interim');
+            
+            transcriptLog.push({ boxId: currentSemanticBoxId, src: combinedText, trans: '' });
 
-                        transcriptLog.push({ boxId: currentBoxId, src: finalizedText, trans: '' });
+            if (currentMode === 'auto') {
+                enqueueTranslation({ boxId: currentSemanticBoxId, text: combinedText });
+            } else {
+                manualTextBuffer.push(combinedText);
+            }
 
-                        if (currentMode === 'auto') {
-                            enqueueTranslation({ boxId: currentBoxId, text: finalizedText });
-                        } else {
-                            manualTextBuffer.push(finalizedText);
-                        }
+            // 전송 후 버퍼와 박스 ID 초기화 (다음 문장 준비)
+            semanticBuffer = "";
+            currentSemanticBoxId = null;
+        } else {
+            // 미완성 문장(ex: "and the sentence size,")이라면 박스를 닫지 않고 버퍼에만 누적
+            semanticBuffer = combinedText;
+        }
+    }
 
-                        activeBoxId = `seq-${++sentenceSeq}`;
-                    }
-
-                    scrollDisplayToBottom();
-                };
+    scrollDisplayToBottom();
+};
 
                 deepgramSocket.onerror = (err) => {
                     console.error('Deepgram 연결 에러:', err);
