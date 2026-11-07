@@ -8,12 +8,12 @@
         :root {
             --bg-color: #121212;
             --box-bg: #1e1e1e;
-            --input-font-size: 1.1rem;
+            --input-font-size: 18px;
             --input-font-color: #aaaaaa;
-            --trans-font-size: 1.6rem;
+            --trans-font-size: 26px;
             --trans-font-color: #ffeb3b;
-            --box-gap: 1.2rem;
-            --box-padding: 1.2rem;
+            --box-gap: 12px;
+            --box-padding: 12px;
         }
 
         body {
@@ -29,7 +29,7 @@
             transition: background-color 0.3s;
         }
 
-        /* 컨트롤 패널 및 숨김 버튼 스타일 */
+        /* 컨트롤 패널 */
         .header-panel {
             display: flex;
             flex-direction: column;
@@ -61,26 +61,11 @@
             font-weight: bold;
         }
 
-        #showPanelBtn:hover {
-            background: rgba(255, 255, 255, 0.4);
-        }
-
-        #hidePanelBtn {
-            background-color: #555;
-            color: white;
-            border: none;
-            margin-left: auto;
-        }
+        #hidePanelBtn { background-color: #555; color: white; border: none; margin-left: auto; }
 
         .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        button, select, input[type="text"], input[type="password"] {
-            padding: 10px 14px;
-            font-size: 15px;
-            border-radius: 6px;
-            border: 1px solid #444;
-            background-color: #2a2a2a;
-            color: #fff;
-            font-weight: 600;
+        button, select, input[type="text"], input[type="password"], input[type="number"] {
+            padding: 10px 14px; font-size: 15px; border-radius: 6px; border: 1px solid #444; background-color: #2a2a2a; color: #fff; font-weight: 600;
         }
         button { cursor: pointer; transition: all 0.2s ease; }
         button:disabled, select:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -95,7 +80,6 @@
 
         .mode-btn { background-color: #333; border: 1px solid #555; }
         .mode-btn.active { background-color: #ed6c02; border-color: #ed6c02; color: #fff; }
-        #manualTranslateBtn { background-color: #7b1fa2; color: white; border: none; display: none; }
         #saveBtn { background-color: #1976d2; color: white; border: none; }
 
         .settings-panel {
@@ -121,11 +105,28 @@
         .source-text { font-size: var(--input-font-size); color: var(--input-font-color); line-height: 1.4; margin-bottom: 8px; }
         .source-text.interim { font-style: italic; opacity: 0.7; }
         .target-text { font-size: var(--trans-font-size); color: var(--trans-font-color); font-weight: 700; line-height: 1.45; }
+
+        /* 플로팅 번역 버튼 (수동 모드용) */
+        #floatingTranslateBtn {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1000;
+            background-color: #7b1fa2;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+            display: none; /* 자동 모드일 때는 숨김 */
+        }
+        #floatingTranslateBtn:hover { background-color: #9c27b0; transform: scale(1.05); }
     </style>
 </head>
 <body>
 
-    <!-- 미니멀 복구 버튼 -->
     <button id="showPanelBtn">⚙️ Show Menu</button>
 
     <div class="header-panel" id="headerPanel">
@@ -158,16 +159,22 @@
                 <label>Gemini API Key</label>
                 <input type="password" id="geminiKey" placeholder="Key">
             </div>
+            <!-- 사이즈 입력칸으로 변경 -->
             <div class="setting-group">
-                <label>Input Font Size</label>
-                <input type="range" id="inputFontRange" min="14" max="36" value="18">
+                <label>Input Font Size (px)</label>
+                <input type="number" id="inputFontNumber" min="10" max="100" value="18">
             </div>
             <div class="setting-group">
-                <label>Translation Font Size</label>
-                <input type="range" id="transFontRange" min="18" max="54" value="26">
+                <label>Translation Font Size (px)</label>
+                <input type="number" id="transFontNumber" min="10" max="100" value="26">
+            </div>
+            <!-- 입력 텍스트 색상 추가 -->
+            <div class="setting-group">
+                <label>Input Text Color</label>
+                <input type="color" id="inputColorPick" value="#aaaaaa">
             </div>
             <div class="setting-group">
-                <label>Text Color</label>
+                <label>Translation Color</label>
                 <input type="color" id="transColorPick" value="#ffeb3b">
             </div>
             <div class="setting-group">
@@ -180,11 +187,13 @@
             <button id="micToggleBtn">🎙️ Start Mic</button>
             <button class="mode-btn active" id="autoModeBtn">⚡ Auto Live</button>
             <button class="mode-btn" id="manualModeBtn">⏸️ Manual Batch</button>
-            <button id="manualTranslateBtn">🔄 Translate Now</button>
         </div>
     </div>
 
     <div id="display-container"></div>
+    
+    <!-- 메뉴 밖에 독립적으로 위치한 번역 버튼 -->
+    <button id="floatingTranslateBtn">🔄 Translate Now</button>
 
     <script>
         let deepgramSocket = null;
@@ -206,14 +215,15 @@
 
         let aiAccumulatedText = ""; 
         let currentAiBoxId = null;
-        let silenceTimer = null; // 3초 강제 번역 타이머
+        let currentManualBoxId = null; // 수동 모드 무한 증식 방지용 변수 추가
+        let silenceTimer = null; 
 
         const inLangSelect = document.getElementById('inLang');
         const outLangSelect = document.getElementById('outLang');
         const micToggleBtn = document.getElementById('micToggleBtn');
         const autoModeBtn = document.getElementById('autoModeBtn');
         const manualModeBtn = document.getElementById('manualModeBtn');
-        const manualTranslateBtn = document.getElementById('manualTranslateBtn');
+        const floatingTranslateBtn = document.getElementById('floatingTranslateBtn');
         const saveBtn = document.getElementById('saveBtn');
         const displayContainer = document.getElementById('display-container');
         const settingsToggleBtn = document.getElementById('settingsToggleBtn');
@@ -224,20 +234,14 @@
 
         const deepgramKeyInput = document.getElementById('deepgramKey');
         const geminiKeyInput = document.getElementById('geminiKey');
-        const inputFontRange = document.getElementById('inputFontRange');
-        const transFontRange = document.getElementById('transFontRange');
+        const inputFontNumber = document.getElementById('inputFontNumber');
+        const transFontNumber = document.getElementById('transFontNumber');
+        const inputColorPick = document.getElementById('inputColorPick');
         const transColorPick = document.getElementById('transColorPick');
         const bgColorPick = document.getElementById('bgColorPick');
 
-        // --- UI 패널 숨김/표시 기능 ---
-        hidePanelBtn.onclick = () => {
-            headerPanel.classList.add('hidden');
-            showPanelBtn.style.display = 'block';
-        };
-        showPanelBtn.onclick = () => {
-            headerPanel.classList.remove('hidden');
-            showPanelBtn.style.display = 'none';
-        };
+        hidePanelBtn.onclick = () => { headerPanel.classList.add('hidden'); showPanelBtn.style.display = 'block'; };
+        showPanelBtn.onclick = () => { headerPanel.classList.remove('hidden'); showPanelBtn.style.display = 'none'; };
 
         deepgramKeyInput.value = localStorage.getItem('cfg_dg_key') || '';
         geminiKeyInput.value = localStorage.getItem('cfg_gm_key') || '';
@@ -245,37 +249,38 @@
         geminiKeyInput.addEventListener('change', () => localStorage.setItem('cfg_gm_key', geminiKeyInput.value.trim()));
 
         settingsToggleBtn.onclick = () => settingsPanel.classList.toggle('open');
-        inputFontRange.oninput = (e) => document.documentElement.style.setProperty('--input-font-size', `${e.target.value}px`);
-        transFontRange.oninput = (e) => {
+        
+        // 폰트 및 색상 커스텀 이벤트 (숫자 타이핑 기반)
+        inputFontNumber.addEventListener('input', (e) => document.documentElement.style.setProperty('--input-font-size', `${e.target.value}px`));
+        transFontNumber.addEventListener('input', (e) => {
             const size = e.target.value;
             document.documentElement.style.setProperty('--trans-font-size', `${size}px`);
             document.documentElement.style.setProperty('--box-gap', `${size * 0.5}px`);
             document.documentElement.style.setProperty('--box-padding', `${size * 0.5}px`);
-        };
-        transColorPick.oninput = (e) => document.documentElement.style.setProperty('--trans-font-color', e.target.value);
-        bgColorPick.oninput = (e) => document.documentElement.style.setProperty('--bg-color', e.target.value);
+        });
+        inputColorPick.addEventListener('input', (e) => document.documentElement.style.setProperty('--input-font-color', e.target.value));
+        transColorPick.addEventListener('input', (e) => document.documentElement.style.setProperty('--trans-font-color', e.target.value));
+        bgColorPick.addEventListener('input', (e) => document.documentElement.style.setProperty('--bg-color', e.target.value));
 
         autoModeBtn.onclick = () => {
-            currentMode = 'auto'; autoModeBtn.classList.add('active'); manualModeBtn.classList.remove('active'); manualTranslateBtn.style.display = 'none';
+            currentMode = 'auto'; 
+            autoModeBtn.classList.add('active'); manualModeBtn.classList.remove('active'); 
+            floatingTranslateBtn.style.display = 'none'; // 자동일 땐 플로팅 버튼 숨김
         };
         manualModeBtn.onclick = () => {
-            currentMode = 'manual'; manualModeBtn.classList.add('active'); autoModeBtn.classList.remove('active'); manualTranslateBtn.style.display = 'block';
+            currentMode = 'manual'; 
+            manualModeBtn.classList.add('active'); autoModeBtn.classList.remove('active'); 
+            floatingTranslateBtn.style.display = 'block'; // 수동일 땐 플로팅 버튼 표시
         };
 
         function setControlsDisabled(disabled) { inLangSelect.disabled = disabled; outLangSelect.disabled = disabled; }
         function scrollDisplayToBottom() { displayContainer.scrollTop = displayContainer.scrollHeight; }
 
-        async function requestWakeLock() {
-            try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
-        }
+        async function requestWakeLock() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {} }
         function releaseWakeLock() { if (wakeLock) wakeLock.release().then(() => wakeLock = null); }
 
-        async function enqueueTranslation(task) {
-            translationQueue.push(task);
-            processTranslationQueue();
-        }
+        async function enqueueTranslation(task) { translationQueue.push(task); processTranslationQueue(); }
 
-        // --- 제미나이 3.6 API 호출 및 3초 강제 번역 로직 ---
         async function processTranslationQueue() {
             if (isTranslating || translationQueue.length === 0) return;
             isTranslating = true;
@@ -285,15 +290,11 @@
 
             if (!apiKey) {
                 updateTranslationUI(task.boxId, '(API Key is missing)');
-                isTranslating = false;
-                processTranslationQueue();
-                return;
+                isTranslating = false; processTranslationQueue(); return;
             }
 
             try {
                 const targetLanguage = outLangSelect.value;
-                
-                // 강제 번역(3초 초과)일 경우 AI에게 [WAIT]를 허용하지 않는 강력한 지시 전달
                 let systemPrompt = `You are a professional interpreter for the coffee industry.
 Your target language is '${targetLanguage}'.
 Rule 1: Evaluate if the user's input is a semantically complete thought. 
@@ -313,16 +314,12 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                 });
                 contents.push({ role: 'user', parts: [{ text: task.text }] });
 
-                // 제미나이 3.6 모델 강제 지정
+                // 제미나이 3.6 모델 호출
                 const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        system_instruction: { parts: [{ text: systemPrompt }] },
-                        contents: contents
-                    })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: contents })
                 });
 
                 const data = await response.json();
@@ -334,11 +331,9 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                     const transDiv = document.getElementById(`trans-${task.boxId}`);
                     if (transDiv) transDiv.innerText = '... (Waiting for context) ...';
                     
-                    // AI가 WAIT 판정을 내리면 3초 타이머 가동
                     clearTimeout(silenceTimer);
                     silenceTimer = setTimeout(() => {
                         if (aiAccumulatedText.trim() !== "" && currentAiBoxId === task.boxId) {
-                            // 3초간 추가 발화가 없으면 같은 텍스트로 [WAIT] 무시 옵션을 달아 재요청
                             enqueueTranslation({ boxId: task.boxId, text: aiAccumulatedText, forceTranslate: true });
                         }
                     }, 3000);
@@ -351,19 +346,15 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                     const logItem = transcriptLog.find(l => l.boxId === task.boxId);
                     if (logItem) logItem.trans = aiResponse;
 
-                    // 번역 확정 시 버퍼 초기화
                     if (currentAiBoxId === task.boxId) {
-                        aiAccumulatedText = "";
-                        currentAiBoxId = null;
-                        clearTimeout(silenceTimer);
+                        aiAccumulatedText = ""; currentAiBoxId = null; clearTimeout(silenceTimer);
                     }
                 }
             } catch (err) {
                 console.error('Translation Error:', err);
                 updateTranslationUI(task.boxId, `(Error: ${err.message})`);
             } finally {
-                isTranslating = false;
-                setTimeout(processTranslationQueue, 150);
+                isTranslating = false; setTimeout(processTranslationQueue, 150);
             }
         }
 
@@ -419,7 +410,6 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                     if (!transcript) return;
                     const isFinal = data.is_final;
 
-                    // 말을 하는 도중에는 강제 번역 타이머 리셋
                     clearTimeout(silenceTimer);
 
                     if (currentMode === 'auto') {
@@ -433,17 +423,23 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                             if (srcDiv) srcDiv.innerText = aiAccumulatedText;
                             
                             transcriptLog.push({ boxId: currentAiBoxId, src: aiAccumulatedText, trans: '' });
-                            // forceTranslate 플래그 없이 기본 판별 요청
                             enqueueTranslation({ boxId: currentAiBoxId, text: aiAccumulatedText, forceTranslate: false });
                         } else {
                             if (srcDiv) srcDiv.innerText = (aiAccumulatedText + " " + transcript).trim();
                         }
                     } else {
-                        let manualBoxId = `seq-${++sentenceSeq}`;
-                        getOrCreateBox(manualBoxId);
-                        const srcDiv = document.getElementById(`src-${manualBoxId}`);
+                        // 수동 모드 무한 증식 버그 수정 영역
+                        if (!currentManualBoxId) currentManualBoxId = `seq-${++sentenceSeq}`;
+                        getOrCreateBox(currentManualBoxId);
+                        
+                        const srcDiv = document.getElementById(`src-${currentManualBoxId}`);
                         if (srcDiv) srcDiv.innerText = transcript;
-                        if (isFinal) { if (srcDiv) srcDiv.classList.remove('interim'); manualTextBuffer.push(transcript); }
+                        
+                        if (isFinal) { 
+                            if (srcDiv) srcDiv.classList.remove('interim'); 
+                            manualTextBuffer.push(transcript); 
+                            currentManualBoxId = null; // 문장이 완료되었을 때만 새 ID를 받기 위해 초기화
+                        }
                     }
                     scrollDisplayToBottom();
                 };
@@ -452,7 +448,8 @@ Translate the user's input naturally without adding explanations. Do NOT output 
             } catch (err) { alert('Mic Access Failed: ' + err.message); stopAll(); }
         }
 
-        manualTranslateBtn.onclick = () => {
+        // 플로팅 버튼 이벤트 연동
+        floatingTranslateBtn.onclick = () => {
             if (manualTextBuffer.length === 0) return;
             const combinedText = manualTextBuffer.join(' '); const mergedId = `manual-merged-${Date.now()}`;
             manualElementsBuffer.forEach(el => { if (displayContainer.contains(el)) displayContainer.removeChild(el); });
@@ -474,10 +471,11 @@ Translate the user's input naturally without adding explanations. Do NOT output 
             if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
             if (deepgramSocket) { deepgramSocket.close(); deepgramSocket = null; }
             micToggleBtn.innerText = '🎙️ Start Mic'; micToggleBtn.classList.remove('recording'); setControlsDisabled(false);
-            aiAccumulatedText = ""; currentAiBoxId = null;
+            aiAccumulatedText = ""; currentAiBoxId = null; currentManualBoxId = null;
         }
 
         micToggleBtn.onclick = async () => { if (!isRecording) { isRecording = true; await requestWakeLock(); startCaptureAndSTT(); } else stopAll(); };
+        
         saveBtn.onclick = () => {
             if (transcriptLog.length === 0) { alert('No logs to save.'); return; }
             let logText = `=== Live Translation Log ===\nTime: ${new Date().toLocaleString()}\nIn: ${inLangSelect.value} -> Out: ${outLangSelect.value}\n\n`;
