@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>커피 전문 실시간 통역기</title>
+    <title>Live Coffee Translator</title>
     <style>
         :root {
             --bg-color: #121212;
@@ -29,6 +29,7 @@
             transition: background-color 0.3s;
         }
 
+        /* 컨트롤 패널 및 숨김 버튼 스타일 */
         .header-panel {
             display: flex;
             flex-direction: column;
@@ -38,15 +39,40 @@
             border-radius: 12px;
             margin-bottom: 16px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            transition: all 0.3s ease;
         }
 
-        .row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
+        .header-panel.hidden {
+            display: none;
         }
 
+        #showPanelBtn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: none;
+            font-weight: bold;
+        }
+
+        #showPanelBtn:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        #hidePanelBtn {
+            background-color: #555;
+            color: white;
+            border: none;
+            margin-left: auto;
+        }
+
+        .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         button, select, input[type="text"], input[type="password"] {
             padding: 10px 14px;
             font-size: 15px;
@@ -56,192 +82,92 @@
             color: #fff;
             font-weight: 600;
         }
+        button { cursor: pointer; transition: all 0.2s ease; }
+        button:disabled, select:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        button {
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        button:disabled, select:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        #micToggleBtn {
-            background-color: #2e7d32;
-            min-width: 170px;
-            color: white;
-            border: none;
-        }
-
-        #micToggleBtn.recording {
-            background-color: #d32f2f;
-            animation: pulse 1.5s infinite;
-        }
-
+        #micToggleBtn { background-color: #2e7d32; min-width: 130px; color: white; border: none; }
+        #micToggleBtn.recording { background-color: #d32f2f; animation: pulse 1.5s infinite; }
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.7); }
             70% { box-shadow: 0 0 0 10px rgba(211, 47, 47, 0); }
             100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0); }
         }
 
-        .mode-btn {
-            background-color: #333;
-            border: 1px solid #555;
-        }
-
-        .mode-btn.active {
-            background-color: #ed6c02;
-            border-color: #ed6c02;
-            color: #fff;
-        }
-
-        #manualTranslateBtn {
-            background-color: #7b1fa2;
-            color: white;
-            border: none;
-            display: none;
-        }
-
-        #saveBtn {
-            background-color: #1976d2;
-            color: white;
-            border: none;
-            margin-left: auto;
-        }
-
-        #settingsToggleBtn {
-            background-color: #424242;
-            color: #fff;
-            border: none;
-        }
+        .mode-btn { background-color: #333; border: 1px solid #555; }
+        .mode-btn.active { background-color: #ed6c02; border-color: #ed6c02; color: #fff; }
+        #manualTranslateBtn { background-color: #7b1fa2; color: white; border: none; display: none; }
+        #saveBtn { background-color: #1976d2; color: white; border: none; }
 
         .settings-panel {
-            display: none;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            background-color: #252525;
-            padding: 14px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            font-size: 14px;
+            display: none; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px; background-color: #252525; padding: 14px; border-radius: 8px; border: 1px solid #444; font-size: 14px;
         }
-
-        .settings-panel.open {
-            display: grid;
-        }
-
-        .setting-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .setting-group label {
-            font-size: 13px;
-            color: #bbb;
-        }
-
-        .setting-group input {
-            padding: 6px;
-            border-radius: 4px;
-            border: 1px solid #555;
-            background-color: #1a1a1a;
-            color: #fff;
-        }
+        .settings-panel.open { display: grid; }
+        .setting-group { display: flex; flex-direction: column; gap: 6px; }
+        .setting-group label { font-size: 13px; color: #bbb; }
+        .setting-group input { padding: 6px; border-radius: 4px; border: 1px solid #555; background-color: #1a1a1a; color: #fff; }
 
         #display-container {
-            flex: 1;
-            overflow-y: auto;
-            background-color: rgba(0, 0, 0, 0.2);
-            padding: 16px;
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: var(--box-gap);
+            flex: 1; overflow-y: auto; background-color: rgba(0, 0, 0, 0.2);
+            padding: 16px; border-radius: 12px; display: flex; flex-direction: column; gap: var(--box-gap);
         }
-
         .subtitle-box {
-            background-color: var(--box-bg);
-            padding: var(--box-padding);
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            word-break: keep-all;
-            white-space: pre-wrap;
-            transition: all 0.2s ease;
+            background-color: var(--box-bg); padding: var(--box-padding); border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); word-break: keep-all; white-space: pre-wrap; transition: all 0.2s ease;
         }
+        .subtitle-box.manual-pending { border-left: 4px dashed #666; opacity: 0.85; }
+        .subtitle-box.manual-merged { border-left: 5px solid #7b1fa2; background-color: #241d29; }
 
-        .subtitle-box.manual-pending {
-            border-left: 4px dashed #666;
-            opacity: 0.85;
-        }
-
-        .subtitle-box.manual-merged {
-            border-left: 5px solid #7b1fa2;
-            background-color: #241d29;
-        }
-
-        .source-text {
-            font-size: var(--input-font-size);
-            color: var(--input-font-color);
-            line-height: 1.4;
-            margin-bottom: 8px;
-        }
-
-        .source-text.interim {
-            font-style: italic;
-            opacity: 0.7;
-        }
-
-        .target-text {
-            font-size: var(--trans-font-size);
-            color: var(--trans-font-color);
-            font-weight: 700;
-            line-height: 1.45;
-        }
+        .source-text { font-size: var(--input-font-size); color: var(--input-font-color); line-height: 1.4; margin-bottom: 8px; }
+        .source-text.interim { font-style: italic; opacity: 0.7; }
+        .target-text { font-size: var(--trans-font-size); color: var(--trans-font-color); font-weight: 700; line-height: 1.45; }
     </style>
 </head>
 <body>
 
-    <div class="header-panel">
+    <!-- 미니멀 복구 버튼 -->
+    <button id="showPanelBtn">⚙️ Show Menu</button>
+
+    <div class="header-panel" id="headerPanel">
         <div class="row">
             <label>Input:
                 <select id="inLang">
-                    <option value="ko" selected>Korean (ko)</option>
+                    <option value="ko">Korean (ko)</option>
+                    <option value="en" selected>English (en)</option>
                     <option value="es">Spanish (es)</option>
-                    <option value="en">English (en)</option>
                 </select>
             </label>
             <label>Translate:
                 <select id="outLang">
-                    <option value="Spanish (es)" selected>Spanish (es)</option>
-                    <option value="Korean (ko)">Korean (ko)</option>
-                    <option value="English (en)">English (en)</option>
+                    <option value="Korean" selected>Korean</option>
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
                 </select>
             </label>
             <button id="settingsToggleBtn">⚙️ Setting</button>
             <button id="saveBtn">💾 Export</button>
+            <button id="hidePanelBtn">👁️ Hide Menu</button>
         </div>
 
         <div class="settings-panel" id="settingsPanel">
             <div class="setting-group">
                 <label>Deepgram API Key</label>
-                <input type="password" id="deepgramKey" placeholder="Token 입력">
+                <input type="password" id="deepgramKey" placeholder="Token">
             </div>
             <div class="setting-group">
                 <label>Gemini API Key</label>
-                <input type="password" id="geminiKey" placeholder="Key 입력">
+                <input type="password" id="geminiKey" placeholder="Key">
             </div>
             <div class="setting-group">
-                <label>Source Font Size</label>
+                <label>Input Font Size</label>
                 <input type="range" id="inputFontRange" min="14" max="36" value="18">
             </div>
             <div class="setting-group">
-                <label>Target Font Size</label>
+                <label>Translation Font Size</label>
                 <input type="range" id="transFontRange" min="18" max="54" value="26">
             </div>
             <div class="setting-group">
-                <label>Target Text Color</label>
+                <label>Text Color</label>
                 <input type="color" id="transColorPick" value="#ffeb3b">
             </div>
             <div class="setting-group">
@@ -278,9 +204,9 @@
         const transcriptLog = [];
         let sentenceSeq = 0;
 
-        // --- AI 판단용 버퍼 변수 ---
         let aiAccumulatedText = ""; 
         let currentAiBoxId = null;
+        let silenceTimer = null; // 3초 강제 번역 타이머
 
         const inLangSelect = document.getElementById('inLang');
         const outLangSelect = document.getElementById('outLang');
@@ -292,6 +218,9 @@
         const displayContainer = document.getElementById('display-container');
         const settingsToggleBtn = document.getElementById('settingsToggleBtn');
         const settingsPanel = document.getElementById('settingsPanel');
+        const headerPanel = document.getElementById('headerPanel');
+        const hidePanelBtn = document.getElementById('hidePanelBtn');
+        const showPanelBtn = document.getElementById('showPanelBtn');
 
         const deepgramKeyInput = document.getElementById('deepgramKey');
         const geminiKeyInput = document.getElementById('geminiKey');
@@ -300,73 +229,53 @@
         const transColorPick = document.getElementById('transColorPick');
         const bgColorPick = document.getElementById('bgColorPick');
 
+        // --- UI 패널 숨김/표시 기능 ---
+        hidePanelBtn.onclick = () => {
+            headerPanel.classList.add('hidden');
+            showPanelBtn.style.display = 'block';
+        };
+        showPanelBtn.onclick = () => {
+            headerPanel.classList.remove('hidden');
+            showPanelBtn.style.display = 'none';
+        };
+
         deepgramKeyInput.value = localStorage.getItem('cfg_dg_key') || '';
         geminiKeyInput.value = localStorage.getItem('cfg_gm_key') || '';
         deepgramKeyInput.addEventListener('change', () => localStorage.setItem('cfg_dg_key', deepgramKeyInput.value.trim()));
         geminiKeyInput.addEventListener('change', () => localStorage.setItem('cfg_gm_key', geminiKeyInput.value.trim()));
 
         settingsToggleBtn.onclick = () => settingsPanel.classList.toggle('open');
-
-        inputFontRange.oninput = (e) => {
-            document.documentElement.style.setProperty('--input-font-size', `${e.target.value}px`);
-        };
+        inputFontRange.oninput = (e) => document.documentElement.style.setProperty('--input-font-size', `${e.target.value}px`);
         transFontRange.oninput = (e) => {
             const size = e.target.value;
             document.documentElement.style.setProperty('--trans-font-size', `${size}px`);
             document.documentElement.style.setProperty('--box-gap', `${size * 0.5}px`);
             document.documentElement.style.setProperty('--box-padding', `${size * 0.5}px`);
         };
-        transColorPick.oninput = (e) => {
-            document.documentElement.style.setProperty('--trans-font-color', e.target.value);
-        };
-        bgColorPick.oninput = (e) => {
-            document.documentElement.style.setProperty('--bg-color', e.target.value);
-        };
+        transColorPick.oninput = (e) => document.documentElement.style.setProperty('--trans-font-color', e.target.value);
+        bgColorPick.oninput = (e) => document.documentElement.style.setProperty('--bg-color', e.target.value);
 
         autoModeBtn.onclick = () => {
-            currentMode = 'auto';
-            autoModeBtn.classList.add('active');
-            manualModeBtn.classList.remove('active');
-            manualTranslateBtn.style.display = 'none';
+            currentMode = 'auto'; autoModeBtn.classList.add('active'); manualModeBtn.classList.remove('active'); manualTranslateBtn.style.display = 'none';
         };
         manualModeBtn.onclick = () => {
-            currentMode = 'manual';
-            manualModeBtn.classList.add('active');
-            autoModeBtn.classList.remove('active');
-            manualTranslateBtn.style.display = 'block';
+            currentMode = 'manual'; manualModeBtn.classList.add('active'); autoModeBtn.classList.remove('active'); manualTranslateBtn.style.display = 'block';
         };
 
-        function setControlsDisabled(disabled) {
-            inLangSelect.disabled = disabled;
-            outLangSelect.disabled = disabled;
-        }
-
-        function scrollDisplayToBottom() {
-            displayContainer.scrollTop = displayContainer.scrollHeight;
-        }
+        function setControlsDisabled(disabled) { inLangSelect.disabled = disabled; outLangSelect.disabled = disabled; }
+        function scrollDisplayToBottom() { displayContainer.scrollTop = displayContainer.scrollHeight; }
 
         async function requestWakeLock() {
-            try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                }
-            } catch (err) {
-                console.warn('WakeLock Error:', err.message);
-            }
+            try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
         }
-
-        function releaseWakeLock() {
-            if (wakeLock) {
-                wakeLock.release().then(() => wakeLock = null);
-            }
-        }
+        function releaseWakeLock() { if (wakeLock) wakeLock.release().then(() => wakeLock = null); }
 
         async function enqueueTranslation(task) {
             translationQueue.push(task);
             processTranslationQueue();
         }
 
-        // --- AI가 직접 문맥을 판단하는 번역 로직 ---
+        // --- 제미나이 3.6 API 호출 및 3초 강제 번역 로직 ---
         async function processTranslationQueue() {
             if (isTranslating || translationQueue.length === 0) return;
             isTranslating = true;
@@ -383,11 +292,19 @@
 
             try {
                 const targetLanguage = outLangSelect.value;
-                const systemPrompt = `You are a professional interpreter for the coffee industry.
+                
+                // 강제 번역(3초 초과)일 경우 AI에게 [WAIT]를 허용하지 않는 강력한 지시 전달
+                let systemPrompt = `You are a professional interpreter for the coffee industry.
 Your target language is '${targetLanguage}'.
 Rule 1: Evaluate if the user's input is a semantically complete thought. 
 Rule 2: If the sentence is cut off mid-thought, ends with a conjunction, or lacks a concluding nuance, output EXACTLY the word "[WAIT]" and nothing else.
-Rule 3: If it is a complete thought (even if it's spoken language, trailing off like "~뭐", or inverted), provide ONLY the natural translation without any extra explanation.`;
+Rule 3: If it is a complete thought, provide ONLY the natural translation without any extra explanation.`;
+
+                if (task.forceTranslate) {
+                    systemPrompt = `You are a professional interpreter for the coffee industry.
+Your target language is '${targetLanguage}'.
+Translate the user's input naturally without adding explanations. Do NOT output [WAIT].`;
+                }
 
                 const contents = [];
                 contextHistory.forEach(ctx => {
@@ -396,6 +313,7 @@ Rule 3: If it is a complete thought (even if it's spoken language, trailing off 
                 });
                 contents.push({ role: 'user', parts: [{ text: task.text }] });
 
+                // 제미나이 3.6 모델 강제 지정
                 const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(endpoint, {
@@ -412,12 +330,19 @@ Rule 3: If it is a complete thought (even if it's spoken language, trailing off 
 
                 const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
-                // AI가 말을 더 기다려야 한다고 판단한 경우
-                if (aiResponse.includes('[WAIT]')) {
+                if (aiResponse.includes('[WAIT]') && !task.forceTranslate) {
                     const transDiv = document.getElementById(`trans-${task.boxId}`);
                     if (transDiv) transDiv.innerText = '... (Waiting for context) ...';
+                    
+                    // AI가 WAIT 판정을 내리면 3초 타이머 가동
+                    clearTimeout(silenceTimer);
+                    silenceTimer = setTimeout(() => {
+                        if (aiAccumulatedText.trim() !== "" && currentAiBoxId === task.boxId) {
+                            // 3초간 추가 발화가 없으면 같은 텍스트로 [WAIT] 무시 옵션을 달아 재요청
+                            enqueueTranslation({ boxId: task.boxId, text: aiAccumulatedText, forceTranslate: true });
+                        }
+                    }, 3000);
                 } 
-                // AI가 완결된 문장이라고 판단한 경우
                 else {
                     updateTranslationUI(task.boxId, aiResponse);
                     contextHistory.push({ src: task.text, trans: aiResponse });
@@ -426,13 +351,13 @@ Rule 3: If it is a complete thought (even if it's spoken language, trailing off 
                     const logItem = transcriptLog.find(l => l.boxId === task.boxId);
                     if (logItem) logItem.trans = aiResponse;
 
-                    // 번역이 완료되었으므로 누적 버퍼를 비워 다음 문장을 준비함
+                    // 번역 확정 시 버퍼 초기화
                     if (currentAiBoxId === task.boxId) {
                         aiAccumulatedText = "";
                         currentAiBoxId = null;
+                        clearTimeout(silenceTimer);
                     }
                 }
-
             } catch (err) {
                 console.error('Translation Error:', err);
                 updateTranslationUI(task.boxId, `(Error: ${err.message})`);
@@ -444,242 +369,122 @@ Rule 3: If it is a complete thought (even if it's spoken language, trailing off 
 
         function updateTranslationUI(boxId, text) {
             const transDiv = document.getElementById(`trans-${boxId}`);
-            if (transDiv) {
-                transDiv.innerText = text;
-                scrollDisplayToBottom();
-            }
+            if (transDiv) { transDiv.innerText = text; scrollDisplayToBottom(); }
         }
 
         function getOrCreateBox(boxId) {
             let box = document.getElementById(`box-${boxId}`);
             if (!box) {
-                box = document.createElement('div');
-                box.id = `box-${boxId}`;
-                box.className = 'subtitle-box';
-
-                if (currentMode === 'manual') {
-                    box.classList.add('manual-pending');
-                    manualElementsBuffer.push(box);
-                }
-
-                const sourceDiv = document.createElement('div');
-                sourceDiv.id = `src-${boxId}`;
-                sourceDiv.className = 'source-text interim';
+                box = document.createElement('div'); box.id = `box-${boxId}`; box.className = 'subtitle-box';
+                if (currentMode === 'manual') { box.classList.add('manual-pending'); manualElementsBuffer.push(box); }
+                const sourceDiv = document.createElement('div'); sourceDiv.id = `src-${boxId}`; sourceDiv.className = 'source-text interim';
                 box.appendChild(sourceDiv);
-
                 if (currentMode === 'auto') {
-                    const transDiv = document.createElement('div');
-                    transDiv.id = `trans-${boxId}`;
-                    transDiv.className = 'target-text';
-                    transDiv.innerText = '... (Waiting...) ...';
-                    box.appendChild(transDiv);
+                    const transDiv = document.createElement('div'); transDiv.id = `trans-${boxId}`; transDiv.className = 'target-text';
+                    transDiv.innerText = '... (Waiting...) ...'; box.appendChild(transDiv);
                 }
-
                 displayContainer.appendChild(box);
             }
             return box;
         }
 
-        // --- Deepgram STT 누적 로직 ---
         async function startCaptureAndSTT() {
             const apiKey = deepgramKeyInput.value.trim();
-            if (!apiKey) {
-                alert('Please enter Deepgram API Key in Settings.');
-                stopAll();
-                return;
-            }
+            if (!apiKey) { alert('Please enter Deepgram API Key.'); stopAll(); return; }
 
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: true,
-                        channelCount: 1
-                    }
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 }
                 });
 
                 let mimeType = 'audio/webm';
-                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-                    mimeType = 'audio/webm;codecs=opus';
-                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-                    mimeType = 'audio/mp4';
-                }
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+                else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
                 const lang = inLangSelect.value;
                 const url = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${lang}&smart_format=true&interim_results=true&endpointing=1200`;
-
                 deepgramSocket = new WebSocket(url, ['token', apiKey]);
 
                 deepgramSocket.onopen = () => {
                     mediaRecorder = new MediaRecorder(mediaStream, { mimeType: mimeType });
-                    
-                    mediaRecorder.ondataavailable = (event) => {
-                        if (event.data.size > 0 && deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
-                            deepgramSocket.send(event.data);
-                        }
-                    };
-
+                    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0 && deepgramSocket.readyState === WebSocket.OPEN) deepgramSocket.send(e.data); };
                     mediaRecorder.start(250); 
-                    micToggleBtn.innerText = '⏹️ Stop Mic';
-                    micToggleBtn.classList.add('recording');
-                    setControlsDisabled(true);
+                    micToggleBtn.innerText = '⏹️ Stop Mic'; micToggleBtn.classList.add('recording'); setControlsDisabled(true);
                 };
 
                 deepgramSocket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     if (!data.channel?.alternatives?.[0]) return;
-
                     const transcript = data.channel.alternatives[0].transcript;
                     if (!transcript) return;
-
                     const isFinal = data.is_final;
 
+                    // 말을 하는 도중에는 강제 번역 타이머 리셋
+                    clearTimeout(silenceTimer);
+
                     if (currentMode === 'auto') {
-                        if (!currentAiBoxId) {
-                            currentAiBoxId = `seq-${++sentenceSeq}`;
-                        }
+                        if (!currentAiBoxId) currentAiBoxId = `seq-${++sentenceSeq}`;
                         getOrCreateBox(currentAiBoxId);
-                        
                         const srcDiv = document.getElementById(`src-${currentAiBoxId}`);
                         
                         if (isFinal) {
                             if (srcDiv) srcDiv.classList.remove('interim');
-                            
-                            // 침묵이 발생할 때마다 텍스트를 누적시켜 AI에게 검사받음
                             aiAccumulatedText = (aiAccumulatedText + " " + transcript).trim();
                             if (srcDiv) srcDiv.innerText = aiAccumulatedText;
                             
                             transcriptLog.push({ boxId: currentAiBoxId, src: aiAccumulatedText, trans: '' });
-                            enqueueTranslation({ boxId: currentAiBoxId, text: aiAccumulatedText });
+                            // forceTranslate 플래그 없이 기본 판별 요청
+                            enqueueTranslation({ boxId: currentAiBoxId, text: aiAccumulatedText, forceTranslate: false });
                         } else {
-                            // 말하는 도중에는 화면에만 실시간으로 표시
                             if (srcDiv) srcDiv.innerText = (aiAccumulatedText + " " + transcript).trim();
                         }
                     } else {
-                        // 수동 모드 로직
                         let manualBoxId = `seq-${++sentenceSeq}`;
                         getOrCreateBox(manualBoxId);
                         const srcDiv = document.getElementById(`src-${manualBoxId}`);
                         if (srcDiv) srcDiv.innerText = transcript;
-
-                        if (isFinal) {
-                            if (srcDiv) srcDiv.classList.remove('interim');
-                            manualTextBuffer.push(transcript);
-                        }
+                        if (isFinal) { if (srcDiv) srcDiv.classList.remove('interim'); manualTextBuffer.push(transcript); }
                     }
-
                     scrollDisplayToBottom();
                 };
-
-                deepgramSocket.onerror = (err) => {
-                    console.error('Deepgram Error:', err);
-                    alert('Deepgram Connection Failed.');
-                    stopAll();
-                };
-
-                deepgramSocket.onclose = () => {
-                    if (isRecording) {
-                        stopAll();
-                    }
-                };
-
-            } catch (err) {
-                alert('Mic Access Failed: ' + err.message);
-                stopAll();
-            }
+                deepgramSocket.onerror = () => { alert('Deepgram Connection Failed.'); stopAll(); };
+                deepgramSocket.onclose = () => { if (isRecording) stopAll(); };
+            } catch (err) { alert('Mic Access Failed: ' + err.message); stopAll(); }
         }
 
         manualTranslateBtn.onclick = () => {
             if (manualTextBuffer.length === 0) return;
+            const combinedText = manualTextBuffer.join(' '); const mergedId = `manual-merged-${Date.now()}`;
+            manualElementsBuffer.forEach(el => { if (displayContainer.contains(el)) displayContainer.removeChild(el); });
 
-            const combinedText = manualTextBuffer.join(' ');
-            const mergedId = `manual-merged-${Date.now()}`;
-
-            manualElementsBuffer.forEach(el => {
-                if (displayContainer.contains(el)) displayContainer.removeChild(el);
-            });
-
-            const mergedBox = document.createElement('div');
-            mergedBox.id = `box-${mergedId}`;
-            mergedBox.className = 'subtitle-box manual-merged';
-
-            const srcDiv = document.createElement('div');
-            srcDiv.id = `src-${mergedId}`;
-            srcDiv.className = 'source-text';
-            srcDiv.innerText = combinedText;
-
-            const transDiv = document.createElement('div');
-            transDiv.id = `trans-${mergedId}`;
-            transDiv.className = 'target-text';
-            transDiv.innerText = '... (Translating Batch...) ...';
-
-            mergedBox.appendChild(srcDiv);
-            mergedBox.appendChild(transDiv);
-            displayContainer.appendChild(mergedBox);
-
+            const mergedBox = document.createElement('div'); mergedBox.id = `box-${mergedId}`; mergedBox.className = 'subtitle-box manual-merged';
+            const srcDiv = document.createElement('div'); srcDiv.id = `src-${mergedId}`; srcDiv.className = 'source-text'; srcDiv.innerText = combinedText;
+            const transDiv = document.createElement('div'); transDiv.id = `trans-${mergedId}`; transDiv.className = 'target-text'; transDiv.innerText = '... (Translating...) ...';
+            
+            mergedBox.appendChild(srcDiv); mergedBox.appendChild(transDiv); displayContainer.appendChild(mergedBox);
             transcriptLog.push({ boxId: mergedId, src: combinedText, trans: '' });
-            enqueueTranslation({ boxId: mergedId, text: combinedText });
-
-            manualTextBuffer = [];
-            manualElementsBuffer = [];
-            scrollDisplayToBottom();
+            enqueueTranslation({ boxId: mergedId, text: combinedText, forceTranslate: true });
+            
+            manualTextBuffer = []; manualElementsBuffer = []; scrollDisplayToBottom();
         };
 
         function stopAll() {
-            isRecording = false;
-            releaseWakeLock();
-
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                mediaRecorder = null;
-            }
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(t => t.stop());
-                mediaStream = null;
-            }
-            if (deepgramSocket) {
-                deepgramSocket.close();
-                deepgramSocket = null;
-            }
-
-            micToggleBtn.innerText = '🎙️ Start Mic';
-            micToggleBtn.classList.remove('recording');
-            setControlsDisabled(false);
-            
-            aiAccumulatedText = "";
-            currentAiBoxId = null;
+            isRecording = false; releaseWakeLock(); clearTimeout(silenceTimer);
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); mediaRecorder = null; }
+            if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+            if (deepgramSocket) { deepgramSocket.close(); deepgramSocket = null; }
+            micToggleBtn.innerText = '🎙️ Start Mic'; micToggleBtn.classList.remove('recording'); setControlsDisabled(false);
+            aiAccumulatedText = ""; currentAiBoxId = null;
         }
 
-        micToggleBtn.onclick = async () => {
-            if (!isRecording) {
-                isRecording = true;
-                await requestWakeLock();
-                startCaptureAndSTT();
-            } else {
-                stopAll();
-            }
-        };
-
+        micToggleBtn.onclick = async () => { if (!isRecording) { isRecording = true; await requestWakeLock(); startCaptureAndSTT(); } else stopAll(); };
         saveBtn.onclick = () => {
-            if (transcriptLog.length === 0) {
-                alert('No logs to save.');
-                return;
-            }
-
+            if (transcriptLog.length === 0) { alert('No logs to save.'); return; }
             let logText = `=== Live Translation Log ===\nTime: ${new Date().toLocaleString()}\nIn: ${inLangSelect.value} -> Out: ${outLangSelect.value}\n\n`;
-
-            transcriptLog.forEach((item, idx) => {
-                logText += `[#${idx + 1}]\nSrc: ${item.src}\nTrans: ${item.trans || '(None)'}\n\n`;
-            });
-
+            transcriptLog.forEach((item, idx) => { logText += `[#${idx + 1}]\nSrc: ${item.src}\nTrans: ${item.trans || '(None)'}\n\n`; });
             const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Translation_Log_${Date.now()}.txt`;
-            a.click();
-            URL.revokeObjectURL(url);
+            const a = document.createElement('a'); a.href = url; a.download = `Log_${Date.now()}.txt`; a.click(); URL.revokeObjectURL(url);
         };
     </script>
 </body>
