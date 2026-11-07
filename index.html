@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>커피 전문 실시간 통역기</title>
     <style>
         :root {
@@ -21,7 +21,7 @@
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", Roboto, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 16px;
             display: flex;
             flex-direction: column;
             height: 100vh;
@@ -29,7 +29,6 @@
             transition: background-color 0.3s;
         }
 
-        /* 컨트롤 및 상단 바 */
         .header-panel {
             display: flex;
             flex-direction: column;
@@ -43,12 +42,12 @@
 
         .row {
             display: flex;
-            gap: 12px;
+            gap: 10px;
             align-items: center;
             flex-wrap: wrap;
         }
 
-        button, select, input[type="text"] {
+        button, select, input[type="text"], input[type="password"] {
             padding: 10px 14px;
             font-size: 15px;
             border-radius: 6px;
@@ -111,7 +110,6 @@
             margin-left: auto;
         }
 
-        /* 설정 아코디언 */
         #settingsToggleBtn {
             background-color: #424242;
             color: #fff;
@@ -152,7 +150,6 @@
             color: #fff;
         }
 
-        /* 텍스트 디스플레이 컨테이너 (누적 스크롤) */
         #display-container {
             flex: 1;
             overflow-y: auto;
@@ -202,41 +199,30 @@
             font-weight: 700;
             line-height: 1.45;
         }
-
-        .status-tag {
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background-color: #444;
-            color: #ddd;
-            margin-bottom: 6px;
-            display: inline-block;
-        }
     </style>
 </head>
 <body>
 
     <div class="header-panel">
         <div class="row">
-            <label>입력 언어:
+            <label>입력:
                 <select id="inLang">
-                    <option value="es" selected>스페인어 (es)</option>
+                    <option value="ko" selected>한국어 (ko)</option>
+                    <option value="es">스페인어 (es)</option>
                     <option value="en">영어 (en)</option>
-                    <option value="ko">한국어 (ko)</option>
                 </select>
             </label>
-            <label>번역 언어:
+            <label>번역:
                 <select id="outLang">
-                    <option value="한국어" selected>한국어</option>
-                    <option value="스페인어">스페인어</option>
+                    <option value="스페인어" selected>스페인어</option>
+                    <option value="한국어">한국어</option>
                     <option value="영어">영어</option>
                 </select>
             </label>
-            <button id="settingsToggleBtn">⚙️ 환경 설정</button>
-            <button id="saveBtn">💾 자막 기록 저장 (.txt)</button>
+            <button id="settingsToggleBtn">⚙️ 설정</button>
+            <button id="saveBtn">💾 저장</button>
         </div>
 
-        <!-- 설정 패널 (BYOK 및 디스플레이 커스텀) -->
         <div class="settings-panel" id="settingsPanel">
             <div class="setting-group">
                 <label>Deepgram API Key</label>
@@ -247,15 +233,15 @@
                 <input type="password" id="geminiKey" placeholder="Key 입력">
             </div>
             <div class="setting-group">
-                <label>입력어 폰트 크기 (px)</label>
+                <label>입력어 폰트 크기</label>
                 <input type="range" id="inputFontRange" min="14" max="36" value="18">
             </div>
             <div class="setting-group">
-                <label>번역어 폰트 크기 (px)</label>
+                <label>번역어 폰트 크기</label>
                 <input type="range" id="transFontRange" min="18" max="54" value="26">
             </div>
             <div class="setting-group">
-                <label>번역어 글자 색상</label>
+                <label>번역어 색상</label>
                 <input type="color" id="transColorPick" value="#ffeb3b">
             </div>
             <div class="setting-group">
@@ -266,44 +252,32 @@
 
         <div class="row">
             <button id="micToggleBtn">🎙️ 마이크 켜기</button>
-            <button class="mode-btn active" id="autoModeBtn">⚡ 실시간 자동 번역</button>
-            <button class="mode-btn" id="manualModeBtn">⏸️ 수동 지정 번역</button>
+            <button class="mode-btn active" id="autoModeBtn">⚡ 실시간 자동</button>
+            <button class="mode-btn" id="manualModeBtn">⏸️ 수동 모아번역</button>
             <button id="manualTranslateBtn">🔄 지금 번역하기</button>
         </div>
     </div>
 
-    <!-- 스크롤 누적 자막 영역 -->
     <div id="display-container"></div>
 
     <script>
-        // --- 1. 상태 및 큐 관리 ---
         let deepgramSocket = null;
+        let mediaRecorder = null;
         let mediaStream = null;
-        let audioContext = null;
-        let processor = null;
         let wakeLock = null;
 
         let isRecording = false;
-        let currentMode = 'auto'; // 'auto' | 'manual'
+        let currentMode = 'auto';
 
-        // 번역 요청 대기열 (FIFO)
         const translationQueue = [];
         let isTranslating = false;
-
-        // 번역 문맥 기억 (최근 3개 턴 유지)
         const contextHistory = [];
 
-        // 수동 모드용 버퍼
         let manualTextBuffer = [];
         let manualElementsBuffer = [];
-
-        // 기록 저장용 데이터
         const transcriptLog = [];
-
-        // 문장 ID 시퀀스
         let sentenceSeq = 0;
 
-        // --- 2. DOM 엘리먼트 ---
         const inLangSelect = document.getElementById('inLang');
         const outLangSelect = document.getElementById('outLang');
         const micToggleBtn = document.getElementById('micToggleBtn');
@@ -322,13 +296,11 @@
         const transColorPick = document.getElementById('transColorPick');
         const bgColorPick = document.getElementById('bgColorPick');
 
-        // 로컬 스토리지 키 복원
         deepgramKeyInput.value = localStorage.getItem('cfg_dg_key') || '';
         geminiKeyInput.value = localStorage.getItem('cfg_gm_key') || '';
         deepgramKeyInput.addEventListener('change', () => localStorage.setItem('cfg_dg_key', deepgramKeyInput.value.trim()));
         geminiKeyInput.addEventListener('change', () => localStorage.setItem('cfg_gm_key', geminiKeyInput.value.trim()));
 
-        // --- 3. UI 커스터마이징 이벤트 연동 ---
         settingsToggleBtn.onclick = () => settingsPanel.classList.toggle('open');
 
         inputFontRange.oninput = (e) => {
@@ -337,7 +309,6 @@
         transFontRange.oninput = (e) => {
             const size = e.target.value;
             document.documentElement.style.setProperty('--trans-font-size', `${size}px`);
-            // 글자 크기에 맞춰 여백과 줄간격 동적 보정
             document.documentElement.style.setProperty('--box-gap', `${size * 0.5}px`);
             document.documentElement.style.setProperty('--box-padding', `${size * 0.5}px`);
         };
@@ -348,7 +319,6 @@
             document.documentElement.style.setProperty('--bg-color', e.target.value);
         };
 
-        // 모드 전환
         autoModeBtn.onclick = () => {
             currentMode = 'auto';
             autoModeBtn.classList.add('active');
@@ -371,14 +341,13 @@
             displayContainer.scrollTop = displayContainer.scrollHeight;
         }
 
-        // --- 4. 안드로이드/모바일 화면 꺼짐 방지 (Wake Lock API) ---
         async function requestWakeLock() {
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
                 }
             } catch (err) {
-                console.warn('Wake Lock 요청 실패:', err.message);
+                console.warn('WakeLock 미지원 또는 거부:', err.message);
             }
         }
 
@@ -388,7 +357,6 @@
             }
         }
 
-        // --- 5. 비동기 순차 번역 큐 (기능 5) ---
         async function enqueueTranslation(task) {
             translationQueue.push(task);
             processTranslationQueue();
@@ -402,7 +370,7 @@
             const apiKey = geminiKeyInput.value.trim();
 
             if (!apiKey) {
-                updateTranslationUI(task.boxId, '(Gemini API 키가 입력되지 않았습니다)');
+                updateTranslationUI(task.boxId, '(Gemini API 키를 설정창에 입력해주세요)');
                 isTranslating = false;
                 processTranslationQueue();
                 return;
@@ -412,9 +380,8 @@
                 const targetLanguage = outLangSelect.value;
                 const systemPrompt = `당신은 커피 산업(커핑, 프로세싱, 테이스팅 노트, 로스팅, 농장) 전문 통역가입니다.
 입력된 문장을 반드시 '${targetLanguage}'로 번역하세요.
-문맥상 생략된 주어나 커피 전문 용어를 살리고 부연 설명 없이 번역문만 직접 출력하세요.`;
+문맥상 생략된 주어나 커피 전문 용어를 맥락에 맞게 살리고 오직 번역문만 출력하세요.`;
 
-                // 문맥 기억 구성 (직전 컨텍스트 첨부)
                 const contents = [];
                 contextHistory.forEach(ctx => {
                     contents.push({ role: 'user', parts: [{ text: ctx.src }] });
@@ -434,16 +401,14 @@
                 });
 
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error?.message || 'API 호출 오류');
+                if (!response.ok) throw new Error(data.error?.message || 'Gemini 오류');
 
                 const translatedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '(번역 실패)';
 
-                // 성공 시 UI 업데이트 및 맥락 저장 (최근 3개 유지)
                 updateTranslationUI(task.boxId, translatedText);
                 contextHistory.push({ src: task.text, trans: translatedText });
                 if (contextHistory.length > 3) contextHistory.shift();
 
-                // 기록 보관
                 const logItem = transcriptLog.find(l => l.boxId === task.boxId);
                 if (logItem) logItem.trans = translatedText;
 
@@ -452,7 +417,6 @@
                 updateTranslationUI(task.boxId, `(번역 오류: ${err.message})`);
             } finally {
                 isTranslating = false;
-                // 과도한 속도 제한 방지 및 부드러운 큐 소비를 위해 약간의 지연
                 setTimeout(processTranslationQueue, 150);
             }
         }
@@ -465,7 +429,6 @@
             }
         }
 
-        // --- 6. 출력기 (기능 4, 6) ---
         function getOrCreateBox(boxId) {
             let box = document.getElementById(`box-${boxId}`);
             if (!box) {
@@ -481,7 +444,6 @@
                 const sourceDiv = document.createElement('div');
                 sourceDiv.id = `src-${boxId}`;
                 sourceDiv.className = 'source-text interim';
-
                 box.appendChild(sourceDiv);
 
                 if (currentMode === 'auto') {
@@ -497,78 +459,17 @@
             return box;
         }
 
-        // --- 7. Deepgram WebSocket 및 상시 STT (기능 1, 2, 3) ---
-        function initDeepgramSTT() {
+        // --- 모바일 호환 MediaRecorder 기반 Deepgram 연결 ---
+        async function startCaptureAndSTT() {
             const apiKey = deepgramKeyInput.value.trim();
             if (!apiKey) {
-                alert('Deepgram API 키를 설정창에 입력해주세요.');
+                alert('Deepgram API 키를 [⚙️ 설정]에 먼저 입력해주세요.');
                 stopAll();
                 return;
             }
 
-            const lang = inLangSelect.value;
-            // smart_format=true로 구두점 및 문장 형태 분석을 유도하고, endpointing=1200으로 문장 호흡 확보
-            const url = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${lang}&smart_format=true&interim_results=true&endpointing=1200`;
-
-            deepgramSocket = new WebSocket(url, ['token', apiKey]);
-
-            deepgramSocket.onopen = () => {
-                console.log('Deepgram STT WebSocket 연결 성공');
-                startMicrophoneStream();
-            };
-
-            let activeBoxId = `seq-${++sentenceSeq}`;
-
-            deepgramSocket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (!data.channel?.alternatives?.[0]) return;
-
-                const transcript = data.channel.alternatives[0].transcript;
-                if (!transcript) return;
-
-                const isFinal = data.is_final;
-                getOrCreateBox(activeBoxId);
-
-                const srcDiv = document.getElementById(`src-${activeBoxId}`);
-                if (srcDiv) {
-                    srcDiv.innerText = transcript;
-                }
-
-                if (isFinal) {
-                    if (srcDiv) srcDiv.classList.remove('interim');
-
-                    const finalizedText = transcript.trim();
-                    const currentBoxId = activeBoxId;
-
-                    transcriptLog.push({ boxId: currentBoxId, src: finalizedText, trans: '' });
-
-                    if (currentMode === 'auto') {
-                        enqueueTranslation({ boxId: currentBoxId, text: finalizedText });
-                    } else {
-                        manualTextBuffer.push(finalizedText);
-                    }
-
-                    // 다음 발화를 위해 새로운 문장 박스 ID 생성
-                    activeBoxId = `seq-${++sentenceSeq}`;
-                }
-
-                scrollDisplayToBottom();
-            };
-
-            deepgramSocket.onerror = (err) => {
-                console.error('Deepgram 에러:', err);
-            };
-
-            deepgramSocket.onclose = () => {
-                if (isRecording) {
-                    console.warn('Deepgram 연결 종료됨');
-                }
-            };
-        }
-
-        // 마이크 스트림을 단일 AudioWorklet 또는 ScriptProcessor로 raw L16 PCM 전송
-        async function startMicrophoneStream() {
             try {
+                // 모바일 권한 획득
                 mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: true,
@@ -577,29 +478,84 @@
                     }
                 });
 
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                const source = audioContext.createMediaStreamSource(mediaStream);
+                // 모바일 크롬 지원 코덱 탐색
+                let mimeType = 'audio/webm';
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4';
+                }
 
-                processor = audioContext.createScriptProcessor(4096, 1, 1);
-                source.connect(processor);
-                processor.connect(audioContext.destination);
+                const lang = inLangSelect.value;
+                const url = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${lang}&smart_format=true&interim_results=true&endpointing=1200`;
 
-                processor.onaudioprocess = (e) => {
-                    if (!isRecording || !deepgramSocket || deepgramSocket.readyState !== WebSocket.OPEN) return;
+                // 모바일 웹소켓 안정성을 위해 서브프로토콜 토큰 인증 적용
+                deepgramSocket = new WebSocket(url, ['token', apiKey]);
+
+                let activeBoxId = `seq-${++sentenceSeq}`;
+
+                deepgramSocket.onopen = () => {
+                    mediaRecorder = new MediaRecorder(mediaStream, { mimeType: mimeType });
                     
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    // Float32 -> Int16 PCM 변환
-                    const pcmBuffer = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        const s = Math.max(-1, Math.min(1, inputData[i]));
-                        pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                    }
-                    deepgramSocket.send(pcmBuffer.buffer);
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0 && deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
+                            deepgramSocket.send(event.data);
+                        }
+                    };
+
+                    mediaRecorder.start(250); // 250ms마다 오디오 청크 스트리밍
+
+                    micToggleBtn.innerText = '⏹️ 마이크 끄기 (통역 중)';
+                    micToggleBtn.classList.add('recording');
+                    setControlsDisabled(true);
                 };
 
-                micToggleBtn.innerText = '⏹️ 마이크 끄기 (통역 중)';
-                micToggleBtn.classList.add('recording');
-                setControlsDisabled(true);
+                deepgramSocket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (!data.channel?.alternatives?.[0]) return;
+
+                    const transcript = data.channel.alternatives[0].transcript;
+                    if (!transcript) return;
+
+                    const isFinal = data.is_final;
+                    getOrCreateBox(activeBoxId);
+
+                    const srcDiv = document.getElementById(`src-${activeBoxId}`);
+                    if (srcDiv) {
+                        srcDiv.innerText = transcript;
+                    }
+
+                    if (isFinal) {
+                        if (srcDiv) srcDiv.classList.remove('interim');
+
+                        const finalizedText = transcript.trim();
+                        const currentBoxId = activeBoxId;
+
+                        transcriptLog.push({ boxId: currentBoxId, src: finalizedText, trans: '' });
+
+                        if (currentMode === 'auto') {
+                            enqueueTranslation({ boxId: currentBoxId, text: finalizedText });
+                        } else {
+                            manualTextBuffer.push(finalizedText);
+                        }
+
+                        activeBoxId = `seq-${++sentenceSeq}`;
+                    }
+
+                    scrollDisplayToBottom();
+                };
+
+                deepgramSocket.onerror = (err) => {
+                    console.error('Deepgram 연결 에러:', err);
+                    alert('Deepgram 연결에 실패했습니다. 키를 확인해주세요.');
+                    stopAll();
+                };
+
+                deepgramSocket.onclose = () => {
+                    if (isRecording) {
+                        stopAll();
+                    }
+                };
 
             } catch (err) {
                 alert('마이크 접근 실패: ' + err.message);
@@ -607,19 +563,16 @@
             }
         }
 
-        // --- 8. 수동 번역 (단락 통합 블록화) ---
         manualTranslateBtn.onclick = () => {
             if (manualTextBuffer.length === 0) return;
 
             const combinedText = manualTextBuffer.join(' ');
             const mergedId = `manual-merged-${Date.now()}`;
 
-            // 기존에 대기 상태로 개별 생성된 박스들을 화면에서 제거
             manualElementsBuffer.forEach(el => {
                 if (displayContainer.contains(el)) displayContainer.removeChild(el);
             });
 
-            // 하나의 거대한 짝 박스로 통합 생성
             const mergedBox = document.createElement('div');
             mergedBox.id = `box-${mergedId}`;
             mergedBox.className = 'subtitle-box manual-merged';
@@ -639,28 +592,20 @@
             displayContainer.appendChild(mergedBox);
 
             transcriptLog.push({ boxId: mergedId, src: combinedText, trans: '' });
-
-            // 번역 큐에 투입
             enqueueTranslation({ boxId: mergedId, text: combinedText });
 
-            // 버퍼 초기화
             manualTextBuffer = [];
             manualElementsBuffer = [];
             scrollDisplayToBottom();
         };
 
-        // --- 9. 시작 및 중단 관리 ---
         function stopAll() {
             isRecording = false;
             releaseWakeLock();
 
-            if (processor) {
-                processor.disconnect();
-                processor = null;
-            }
-            if (audioContext) {
-                audioContext.close();
-                audioContext = null;
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder = null;
             }
             if (mediaStream) {
                 mediaStream.getTracks().forEach(t => t.stop());
@@ -680,20 +625,19 @@
             if (!isRecording) {
                 isRecording = true;
                 await requestWakeLock();
-                initDeepgramSTT();
+                startCaptureAndSTT();
             } else {
                 stopAll();
             }
         };
 
-        // --- 10. 기록 저장 (기능 7) ---
         saveBtn.onclick = () => {
             if (transcriptLog.length === 0) {
                 alert('저장할 기록이 없습니다.');
                 return;
             }
 
-            let logText = `=== 커피 커핑/세미나 실시간 통역 기록 ===\n생성일시: ${new Date().toLocaleString()}\n입력언어: ${inLangSelect.value} -> 번역언어: ${outLangSelect.value}\n\n`;
+            let logText = `=== 커피 실시간 통역 기록 ===\n생성일시: ${new Date().toLocaleString()}\n입력: ${inLangSelect.value} -> 번역: ${outLangSelect.value}\n\n`;
 
             transcriptLog.forEach((item, idx) => {
                 logText += `[#${idx + 1}]\n원문: ${item.src}\n번역: ${item.trans || '(번역 없음)'}\n\n`;
@@ -703,7 +647,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Coffee_Translation_${Date.now()}.txt`;
+            a.download = `Coffee_Log_${Date.now()}.txt`;
             a.click();
             URL.revokeObjectURL(url);
         };
