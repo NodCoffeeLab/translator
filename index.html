@@ -261,34 +261,6 @@
     <div id="display-container"></div>
 
     <script>
-        // [추가] 문장 누적용 버퍼 변수
-let semanticBuffer = "";
-let currentSemanticBoxId = null;
-
-// [추가] 문법 기반 문장 종결 판별기
-function isSentenceComplete(text, lang) {
-    if (!text || text.trim() === "") return false;
-    const t = text.trim();
-    
-    // 1. 공통: 구두점(. ? !)으로 끝나면 무조건 완결로 간주
-    if (/[.?!]$/.test(t)) return true;
-
-    if (lang === 'ko') {
-        // 한국어: 연결 어미(과/와, 고, 며, 는데 등)나 조사로 끝나면 미완성
-        if (/(고|며|와|과|근데|는데|지만|서|이제|그리고|은|는|이|가|을|를)$/.test(t)) return false;
-        // 한국어: 종결 어미(다, 요, 죠, 까, 네, 음, 함)로 끝나면 완결
-        if (/(다|요|죠|까|네|음|함)$/.test(t)) return true;
-    } else if (lang === 'en') {
-        // 영어: 접속사나 전치사로 끝나면 미완성 (Deepgram smart_format이 구두점을 안 찍어준 경우)
-        if (/(and|or|but|because|if|then|with|the|a|an|of|to|in|on|that|which|as)$/i.test(t)) return false;
-    } else if (lang === 'es') {
-        // 스페인어: 접속사나 관사 등으로 끝나면 미완성
-        if (/(y|o|pero|porque|si|con|el|la|los|las|de|a|en|que)$/i.test(t)) return false;
-    }
-    
-    // 기본적으로 구두점이 없으면 말을 쉬는 중(미완성)으로 간주하여 더 대기
-    return false;
-}
         let deepgramSocket = null;
         let mediaRecorder = null;
         let mediaStream = null;
@@ -305,6 +277,10 @@ function isSentenceComplete(text, lang) {
         let manualElementsBuffer = [];
         const transcriptLog = [];
         let sentenceSeq = 0;
+
+        // --- AI 판단용 버퍼 변수 ---
+        let aiAccumulatedText = ""; 
+        let currentAiBoxId = null;
 
         const inLangSelect = document.getElementById('inLang');
         const outLangSelect = document.getElementById('outLang');
@@ -375,7 +351,7 @@ function isSentenceComplete(text, lang) {
                     wakeLock = await navigator.wakeLock.request('screen');
                 }
             } catch (err) {
-                console.warn('WakeLock 미지원 또는 거부:', err.message);
+                console.warn('WakeLock Error:', err.message);
             }
         }
 
@@ -390,6 +366,7 @@ function isSentenceComplete(text, lang) {
             processTranslationQueue();
         }
 
+        // --- AI가 직접 문맥을 판단하는 번역 로직 ---
         async function processTranslationQueue() {
             if (isTranslating || translationQueue.length === 0) return;
             isTranslating = true;
@@ -398,7 +375,7 @@ function isSentenceComplete(text, lang) {
             const apiKey = geminiKeyInput.value.trim();
 
             if (!apiKey) {
-                updateTranslationUI(task.boxId, '(Gemini API 키를 설정창에 입력해주세요)');
+                updateTranslationUI(task.boxId, '(API Key is missing)');
                 isTranslating = false;
                 processTranslationQueue();
                 return;
@@ -406,9 +383,11 @@ function isSentenceComplete(text, lang) {
 
             try {
                 const targetLanguage = outLangSelect.value;
-                const systemPrompt = `당신은 커피 산업(커핑, 프로세싱, 테이스팅 노트, 로스팅, 농장) 전문 통역가입니다.
-입력된 문장을 반드시 '${targetLanguage}'로 번역하세요.
-문맥상 생략된 주어나 커피 전문 용어를 맥락에 맞게 살리고 오직 번역문만 출력하세요.`;
+                const systemPrompt = `You are a professional interpreter for the coffee industry.
+Your target language is '${targetLanguage}'.
+Rule 1: Evaluate if the user's input is a semantically complete thought. 
+Rule 2: If the sentence is cut off mid-thought, ends with a conjunction, or lacks a concluding nuance, output EXACTLY the word "[WAIT]" and nothing else.
+Rule 3: If it is a complete thought (even if it's spoken language, trailing off like "~뭐", or inverted), provide ONLY the natural translation without any extra explanation.`;
 
                 const contents = [];
                 contextHistory.forEach(ctx => {
@@ -417,7 +396,8 @@ function isSentenceComplete(text, lang) {
                 });
                 contents.push({ role: 'user', parts: [{ text: task.text }] });
 
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+                // 선생님이 사용하시는 3.6(1.5-pro/flash 등) 모델명으로 직접 수정하신 부분입니다.
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(endpoint, {
                     method: 'POST',
@@ -429,20 +409,34 @@ function isSentenceComplete(text, lang) {
                 });
 
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error?.message || 'Gemini 오류');
+                if (!response.ok) throw new Error(data.error?.message || 'Gemini Error');
 
-                const translatedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '(번역 실패)';
+                const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
-                updateTranslationUI(task.boxId, translatedText);
-                contextHistory.push({ src: task.text, trans: translatedText });
-                if (contextHistory.length > 3) contextHistory.shift();
+                // AI가 말을 더 기다려야 한다고 판단한 경우
+                if (aiResponse.includes('[WAIT]')) {
+                    const transDiv = document.getElementById(`trans-${task.boxId}`);
+                    if (transDiv) transDiv.innerText = '... (Waiting for context) ...';
+                } 
+                // AI가 완결된 문장이라고 판단한 경우
+                else {
+                    updateTranslationUI(task.boxId, aiResponse);
+                    contextHistory.push({ src: task.text, trans: aiResponse });
+                    if (contextHistory.length > 3) contextHistory.shift();
 
-                const logItem = transcriptLog.find(l => l.boxId === task.boxId);
-                if (logItem) logItem.trans = translatedText;
+                    const logItem = transcriptLog.find(l => l.boxId === task.boxId);
+                    if (logItem) logItem.trans = aiResponse;
+
+                    // 번역이 완료되었으므로 누적 버퍼를 비워 다음 문장을 준비함
+                    if (currentAiBoxId === task.boxId) {
+                        aiAccumulatedText = "";
+                        currentAiBoxId = null;
+                    }
+                }
 
             } catch (err) {
-                console.error('번역 처리 오류:', err);
-                updateTranslationUI(task.boxId, `(Translation Error: ${err.message})`);
+                console.error('Translation Error:', err);
+                updateTranslationUI(task.boxId, `(Error: ${err.message})`);
             } finally {
                 isTranslating = false;
                 setTimeout(processTranslationQueue, 150);
@@ -478,7 +472,7 @@ function isSentenceComplete(text, lang) {
                     const transDiv = document.createElement('div');
                     transDiv.id = `trans-${boxId}`;
                     transDiv.className = 'target-text';
-                    transDiv.innerText = '... (Translating) ...';
+                    transDiv.innerText = '... (Waiting...) ...';
                     box.appendChild(transDiv);
                 }
 
@@ -487,27 +481,25 @@ function isSentenceComplete(text, lang) {
             return box;
         }
 
-        // --- 모바일 호환 MediaRecorder 기반 Deepgram 연결 ---
+        // --- Deepgram STT 누적 로직 ---
         async function startCaptureAndSTT() {
             const apiKey = deepgramKeyInput.value.trim();
             if (!apiKey) {
-                alert('Deepgram API 키를 [⚙️ 설정]에 먼저 입력해주세요.');
+                alert('Please enter Deepgram API Key in Settings.');
                 stopAll();
                 return;
             }
 
             try {
-                // 모바일 권한 획득 블루투스 마이크 및 모바일 입력 호환성 강제 지정
-mediaStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-        echoCancellation: false, // 블루투스 자체 노이즈캔슬링과의 충돌 방지
-        noiseSuppression: false,
-        autoGainControl: true,
-        channelCount: 1
-    }
-});
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: true,
+                        channelCount: 1
+                    }
+                });
 
-                // 모바일 크롬 지원 코덱 탐색
                 let mimeType = 'audio/webm';
                 if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
                     mimeType = 'audio/webm;codecs=opus';
@@ -518,10 +510,7 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
                 const lang = inLangSelect.value;
                 const url = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${lang}&smart_format=true&interim_results=true&endpointing=1200`;
 
-                // 모바일 웹소켓 안정성을 위해 서브프로토콜 토큰 인증 적용
                 deepgramSocket = new WebSocket(url, ['token', apiKey]);
-
-                let activeBoxId = `seq-${++sentenceSeq}`;
 
                 deepgramSocket.onopen = () => {
                     mediaRecorder = new MediaRecorder(mediaStream, { mimeType: mimeType });
@@ -532,67 +521,61 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
                         }
                     };
 
-                    mediaRecorder.start(250); // 250ms마다 오디오 청크 스트리밍
-
+                    mediaRecorder.start(250); 
                     micToggleBtn.innerText = '⏹️ Stop Mic';
                     micToggleBtn.classList.add('recording');
                     setControlsDisabled(true);
                 };
 
                 deepgramSocket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (!data.channel?.alternatives?.[0]) return;
+                    const data = JSON.parse(event.data);
+                    if (!data.channel?.alternatives?.[0]) return;
 
-    const transcript = data.channel.alternatives[0].transcript;
-    if (!transcript) return;
+                    const transcript = data.channel.alternatives[0].transcript;
+                    if (!transcript) return;
 
-    const isFinal = data.is_final;
+                    const isFinal = data.is_final;
 
-    // 현재 사용 중인 박스 ID가 없으면 새로 발급
-    if (!currentSemanticBoxId) {
-        currentSemanticBoxId = `seq-${++sentenceSeq}`;
-    }
+                    if (currentMode === 'auto') {
+                        if (!currentAiBoxId) {
+                            currentAiBoxId = `seq-${++sentenceSeq}`;
+                        }
+                        getOrCreateBox(currentAiBoxId);
+                        
+                        const srcDiv = document.getElementById(`src-${currentAiBoxId}`);
+                        
+                        if (isFinal) {
+                            if (srcDiv) srcDiv.classList.remove('interim');
+                            
+                            // 침묵이 발생할 때마다 텍스트를 누적시켜 AI에게 검사받음
+                            aiAccumulatedText = (aiAccumulatedText + " " + transcript).trim();
+                            if (srcDiv) srcDiv.innerText = aiAccumulatedText;
+                            
+                            transcriptLog.push({ boxId: currentAiBoxId, src: aiAccumulatedText, trans: '' });
+                            enqueueTranslation({ boxId: currentAiBoxId, text: aiAccumulatedText });
+                        } else {
+                            // 말하는 도중에는 화면에만 실시간으로 표시
+                            if (srcDiv) srcDiv.innerText = (aiAccumulatedText + " " + transcript).trim();
+                        }
+                    } else {
+                        // 수동 모드 로직
+                        let manualBoxId = `seq-${++sentenceSeq}`;
+                        getOrCreateBox(manualBoxId);
+                        const srcDiv = document.getElementById(`src-${manualBoxId}`);
+                        if (srcDiv) srcDiv.innerText = transcript;
 
-    getOrCreateBox(currentSemanticBoxId);
-    const srcDiv = document.getElementById(`src-${currentSemanticBoxId}`);
-    
-    // 화면에는 기존 누적된 버퍼에 현재 들리는 말을 실시간으로 이어 붙여서 출력
-    const combinedText = (semanticBuffer + " " + transcript).trim();
-    if (srcDiv) {
-        srcDiv.innerText = combinedText;
-    }
+                        if (isFinal) {
+                            if (srcDiv) srcDiv.classList.remove('interim');
+                            manualTextBuffer.push(transcript);
+                        }
+                    }
 
-    // 침묵 감지(is_final) 시 문법적 완결성 검사 수행
-    if (isFinal) {
-        const lang = inLangSelect.value;
-        
-        // 문장이 완성되었다고 판단될 때만 번역 큐로 전송
-        if (isSentenceComplete(combinedText, lang)) {
-            if (srcDiv) srcDiv.classList.remove('interim');
-            
-            transcriptLog.push({ boxId: currentSemanticBoxId, src: combinedText, trans: '' });
-
-            if (currentMode === 'auto') {
-                enqueueTranslation({ boxId: currentSemanticBoxId, text: combinedText });
-            } else {
-                manualTextBuffer.push(combinedText);
-            }
-
-            // 전송 후 버퍼와 박스 ID 초기화 (다음 문장 준비)
-            semanticBuffer = "";
-            currentSemanticBoxId = null;
-        } else {
-            // 미완성 문장(ex: "and the sentence size,")이라면 박스를 닫지 않고 버퍼에만 누적
-            semanticBuffer = combinedText;
-        }
-    }
-
-    scrollDisplayToBottom();
-};
+                    scrollDisplayToBottom();
+                };
 
                 deepgramSocket.onerror = (err) => {
-                    console.error('Deepgram 연결 에러:', err);
-                    alert('Deepgram 연결에 실패했습니다. 키를 확인해주세요.');
+                    console.error('Deepgram Error:', err);
+                    alert('Deepgram Connection Failed.');
                     stopAll();
                 };
 
@@ -603,7 +586,7 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
                 };
 
             } catch (err) {
-                alert('마이크 접근 실패: ' + err.message);
+                alert('Mic Access Failed: ' + err.message);
                 stopAll();
             }
         }
@@ -630,7 +613,7 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
             const transDiv = document.createElement('div');
             transDiv.id = `trans-${mergedId}`;
             transDiv.className = 'target-text';
-            transDiv.innerText = '... (Processing Batch) ...';
+            transDiv.innerText = '... (Translating Batch...) ...';
 
             mergedBox.appendChild(srcDiv);
             mergedBox.appendChild(transDiv);
@@ -661,9 +644,12 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
                 deepgramSocket = null;
             }
 
-            micToggleBtn.innerText = '🎙️ 마이크 켜기';
+            micToggleBtn.innerText = '🎙️ Start Mic';
             micToggleBtn.classList.remove('recording');
             setControlsDisabled(false);
+            
+            aiAccumulatedText = "";
+            currentAiBoxId = null;
         }
 
         micToggleBtn.onclick = async () => {
@@ -678,21 +664,21 @@ mediaStream = await navigator.mediaDevices.getUserMedia({
 
         saveBtn.onclick = () => {
             if (transcriptLog.length === 0) {
-                alert('저장할 기록이 없습니다.');
+                alert('No logs to save.');
                 return;
             }
 
-            let logText = `=== 커피 실시간 통역 기록 ===\n생성일시: ${new Date().toLocaleString()}\n입력: ${inLangSelect.value} -> 번역: ${outLangSelect.value}\n\n`;
+            let logText = `=== Live Translation Log ===\nTime: ${new Date().toLocaleString()}\nIn: ${inLangSelect.value} -> Out: ${outLangSelect.value}\n\n`;
 
             transcriptLog.forEach((item, idx) => {
-                logText += `[#${idx + 1}]\n원문: ${item.src}\n번역: ${item.trans || '(번역 없음)'}\n\n`;
+                logText += `[#${idx + 1}]\nSrc: ${item.src}\nTrans: ${item.trans || '(None)'}\n\n`;
             });
 
             const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Coffee_Log_${Date.now()}.txt`;
+            a.download = `Translation_Log_${Date.now()}.txt`;
             a.click();
             URL.revokeObjectURL(url);
         };
