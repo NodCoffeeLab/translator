@@ -342,7 +342,7 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                         if (aiAccumulatedText.trim() !== "" && currentAiBoxId === task.boxId) {
                             enqueueTranslation({ boxId: task.boxId, text: aiAccumulatedText, forceTranslate: true });
                         }
-                    }, 3000);
+                    }, 500);
                 } 
                 else {
                     updateTranslationUI(task.boxId, aiResponse);
