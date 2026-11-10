@@ -325,7 +325,10 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                 
                 const response = await fetch(endpoint, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: contents })
+                    body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: contents,
+    // 온도 값을 0.5로 설정하여 자연스러움과 속도의 균형을 맞춤
+    generationConfig: {
+        temperature: 0.5 })
                 });
 
                 const data = await response.json();
@@ -399,7 +402,7 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                 else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
                 const lang = inLangSelect.value;
-                const url = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${lang}&smart_format=true&interim_results=true&endpointing=1200`;
+                const url = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${lang}&smart_format=true&interim_results=true&endpointing=800`;
                 deepgramSocket = new WebSocket(url, ['token', apiKey]);
 
                 deepgramSocket.onopen = () => {
