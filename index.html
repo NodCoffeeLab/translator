@@ -325,10 +325,12 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                 
                 const response = await fetch(endpoint, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: contents,
-    // 온도 값을 0.5로 설정하여 자연스러움과 속도의 균형을 맞춤
-    generationConfig: {
-        temperature: 0.5 })
+                    body: JSON.stringify({ 
+                        system_instruction: { parts: [{ text: systemPrompt }] }, 
+                        contents: contents,
+                        // 온도 값을 0.5로 설정하여 자연스러움과 속도의 균형을 맞춤
+                        generationConfig: { temperature: 0.5 } 
+                    })
                 });
 
                 const data = await response.json();
