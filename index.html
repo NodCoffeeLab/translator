@@ -155,7 +155,6 @@
         </div>
 
         <div class="settings-panel" id="settingsPanel">
-            <!-- 사용자 가이드 추가 -->
             <div class="setting-group guide-section">
                 <h4>💡 User Guide: Mode Selection</h4>
                 <p><strong>⚡ Auto Live:</strong> Translates continuously in real-time. The AI automatically waits for a complete sentence or context before translating.</p>
@@ -286,7 +285,16 @@
         async function requestWakeLock() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {} }
         function releaseWakeLock() { if (wakeLock) wakeLock.release().then(() => wakeLock = null); }
 
-        async function enqueueTranslation(task) { translationQueue.push(task); processTranslationQueue(); }
+        async function enqueueTranslation(task) {
+            // [핵심 수정1] 큐 병목 방지: 같은 박스에 대해 낡은 번역 요청이 큐에 있다면 폐기 (순서 꼬임 방지)
+            for (let i = translationQueue.length - 1; i >= 0; i--) {
+                if (translationQueue[i].boxId === task.boxId) {
+                    translationQueue.splice(i, 1);
+                }
+            }
+            translationQueue.push(task); 
+            processTranslationQueue(); 
+        }
 
         async function processTranslationQueue() {
             if (isTranslating || translationQueue.length === 0) return;
@@ -305,8 +313,8 @@
                 let systemPrompt = `You are a professional interpreter for the coffee industry.
 Your target language is '${targetLanguage}'.
 Rule 1: Evaluate if the user's input is a semantically complete thought. 
-Rule 2: If the sentence is cut off mid-thought, ends with a conjunction, or lacks a concluding nuance, output EXACTLY the word "[WAIT]" and nothing else.
-Rule 3: If it is a complete thought, provide ONLY the natural translation without any extra explanation.`;
+Rule 2: Output EXACTLY the word "[WAIT]" if the sentence is cut off mid-thought, ends with a conjunction/preposition, OR if the verb clearly anticipates an object or further description (especially in SVO languages like Spanish or English where the core meaning is still pending).
+Rule 3: If it is a fully completed thought without needing further context, provide ONLY the natural translation without extra explanation.`;
 
                 if (task.forceTranslate) {
                     systemPrompt = `You are a professional interpreter for the coffee industry.
@@ -328,8 +336,8 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                     body: JSON.stringify({ 
                         system_instruction: { parts: [{ text: systemPrompt }] }, 
                         contents: contents,
-                        // 온도 값을 0.5로 설정하여 자연스러움과 속도의 균형을 맞춤
-                        generationConfig: { temperature: 0.5 } 
+                        // [핵심 수정2] 응답 속도 최적화를 위해 온도를 0.2로 하향
+                        generationConfig: { temperature: 0.2 } 
                     })
                 });
 
@@ -340,7 +348,10 @@ Translate the user's input naturally without adding explanations. Do NOT output 
 
                 if (aiResponse.includes('[WAIT]') && !task.forceTranslate) {
                     const transDiv = document.getElementById(`trans-${task.boxId}`);
-                    if (transDiv) transDiv.innerText = '... (Waiting for context) ...';
+                    // [핵심 수정3] 깜빡임 방지: 이미 번역 텍스트가 표시된 박스는 Waiting으로 화면을 덮어씌우지 않음
+                    if (transDiv && !transDiv.hasAttribute('data-has-trans')) {
+                        transDiv.innerText = '... (Waiting for context) ...';
+                    }
                     
                     clearTimeout(silenceTimer);
                     silenceTimer = setTimeout(() => {
@@ -351,6 +362,9 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                 } 
                 else {
                     updateTranslationUI(task.boxId, aiResponse);
+                    const transDiv = document.getElementById(`trans-${task.boxId}`);
+                    if (transDiv) transDiv.setAttribute('data-has-trans', 'true'); // 번역 성공 마커 추가
+
                     contextHistory.push({ src: task.text, trans: aiResponse });
                     if (contextHistory.length > 3) contextHistory.shift();
 
@@ -358,7 +372,12 @@ Translate the user's input naturally without adding explanations. Do NOT output 
                     if (logItem) logItem.trans = aiResponse;
 
                     if (currentAiBoxId === task.boxId) {
-                        aiAccumulatedText = ""; currentAiBoxId = null; clearTimeout(silenceTimer);
+                        // [핵심 수정4] 안전 닫기: 통신 중 새로운 말이 추가되지 않았을 때만 박스를 완전히 닫음
+                        if (aiAccumulatedText === task.text) {
+                            aiAccumulatedText = ""; 
+                            currentAiBoxId = null; 
+                            clearTimeout(silenceTimer);
+                        }
                     }
                 }
             } catch (err) {
